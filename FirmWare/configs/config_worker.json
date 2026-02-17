@@ -1,0 +1,17 @@
+{
+  "role": "worker",
+  "num_classes": 12,
+  "memory_limit": 220000,
+  "layers": [
+    {
+      "type": "conv1d",
+      "in_channels": 16,
+      "out_channels": 16,
+      "kernel_size": 5,
+      "stride": 1,
+      "padding": 2,
+      "description": "Uniform worker: Each device outputs 16 channels"
+    }
+  ],
+  "note": "All workers use identical parameters and shared memory communication. Layer/worker IDs set via command-line args."
+}

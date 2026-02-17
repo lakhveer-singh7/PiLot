@@ -1,0 +1,12 @@
+{
+  "role": "tail",
+  "num_classes": 12,
+  "memory_limit": 220000,
+  "layers": [
+    {
+      "type": "fc",
+      "in_features": 128,
+      "out_features": 12
+    }
+  ],
+  "note": "Tail device now uses shared memory to receive from Layer 4 workers and send gradients back. No socket ports needed."
