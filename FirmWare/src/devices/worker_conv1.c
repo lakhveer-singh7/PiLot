@@ -3,19 +3,15 @@
 #include "comm_types.h"
 #include "config_types.h"
 #include "worker_threads.h"
-#include "shared_memory.h"
+#include "ipc_tensor.h"
+
 
 // External configuration
-extern device_json_config_t* g_device_config;
+// extern device_json_config_t* g_device_config;
 extern model_config_t* g_model_config;
-extern volatile pipeline_phase_t* g_pipeline_ctrl;  // For shutdown detection
+// extern volatile pipeline_phase_t* g_pipeline_ctrl;  
 
 // External runtime parameters (from command line)
-extern int g_upstream_port;
-extern int g_downstream_port;
-extern int g_backward_port;
-extern int g_backward_connect_id;
-extern int g_backward_connect_port;
 extern int g_in_channels;
 extern int g_out_channels;
 extern int g_kernel_size;
@@ -25,426 +21,312 @@ extern int g_layer_id;
 extern int g_worker_id;
 extern int g_num_workers;
 
-// Helper function to get count of downstream workers that write gradients to this layer
-static int get_downstream_worker_count(int layer_id) {
-    switch (layer_id) {
-        case 0: return 2;  // Layer 1 has 2 workers
-        case 1: return 3;  // Layer 2 has 3 workers  
-        case 2: return 4;  // Layer 3 has 4 workers
-        case 3: return 1;  // Tail device
-        default:
-            log_error("Invalid layer_id %d for downstream count", layer_id);
-            return 1;  // Safe fallback
-    }
-}
-
-static int get_current_layer_worker_count(int layer_id) {
-    switch (layer_id) {
-        case 0: return 1;  // Layer 0 has 1 worker
-        case 1: return 2;  // Layer 1 has 2 workers  
-        case 2: return 3;  // Layer 2 has 3 workers
-        case 3: return 4;  // Layer 3 has 4 workers
-        default:
-            log_error("Invalid layer_id %d for current layer count", layer_id);
-            return 1;  // Safe fallback
-    }
-}
 
 int run_worker_device(int device_id) {
     log_info("Starting Worker Device %d (Conv1D processor)", device_id);
     
     // Shared memory parameters (required)
-    int layer_id = g_layer_id;  // Which layer (0-4)
+    int layer_id = g_layer_id;  // Which layer (0-4) 
     int worker_id = g_worker_id;  // Which worker within layer (0-N)
     int num_workers = g_num_workers;  // Total workers in this layer
-    
-    if (layer_id < 0 || worker_id < 0 || num_workers <= 0) {
-        log_error("Shared memory parameters required: --layer-id, --worker-id, --num-workers");
-        return -1;
-    }
-    
-    // Get layer configuration from model config
-    if (!g_model_config) {
-        log_error("Model configuration is required for worker devices");
-        return -1;
-    }
-    
-    // Get input channels from model config based on layer_id
-    int in_channels = get_layer_input_channels(g_model_config, layer_id);
-    if (in_channels < 0) {
-        log_error("Invalid layer_id %d for model configuration", layer_id);
-        return -1;
-    }
-    
-    // Get layer parameters from model config  
-    int out_channels = 16;  // Each worker outputs 16 channels (uniform)
+    int prev_layer_num_workers = (layer_id == 0) ? 1 : g_model_config->layers[layer_id - 1].num_devices;
+    int next_layer_num_workers = g_model_config->layers[layer_id + 1].num_devices;
+    // Get layer parameters from model config
+    int in_channels = 16;  // Default input channels (from previous layer)  
+    int worker_out_channels = 16;  // Each worker outputs 16 channels (uniform)
+    int out_channels = worker_out_channels * num_workers; // Total output channels for this layer
     int kernel_size = 5;
     int stride = 1; 
     int padding = 2;
     
-    if (layer_id < g_model_config->num_layers && 
-        strcmp(g_model_config->layers[layer_id].type, "conv1d") == 0) {
+    if (layer_id < g_model_config->num_layers && strcmp(g_model_config->layers[layer_id].type, "conv1d") == 0) {
         // Use model config parameters
         kernel_size = g_model_config->layers[layer_id].kernel_size;
         stride = g_model_config->layers[layer_id].stride;
         padding = g_model_config->layers[layer_id].padding;
         
         // Total output channels for layer divided by number of workers
-        int total_out_channels = g_model_config->layers[layer_id].out_channels;
-        int layer_num_workers = g_model_config->layers[layer_id].num_devices;
-        out_channels = total_out_channels / layer_num_workers;
+        out_channels = g_model_config->layers[layer_id].out_channels;
+        in_channels = g_model_config->layers[layer_id].in_channels;
     }
-    
-    // Allow command-line overrides
-    if (g_in_channels >= 0) in_channels = g_in_channels;
-    if (g_out_channels >= 0) out_channels = g_out_channels;
-    if (g_kernel_size >= 0) kernel_size = g_kernel_size;
-    if (g_stride >= 0) stride = g_stride;
-    if (g_padding >= 0) padding = g_padding;
     
     log_info("Worker configuration: Layer %d, Worker %d/%d, Conv1D %d→%d channels (kernel=%d, stride=%d, padding=%d)",
-             layer_id, worker_id, num_workers, in_channels, out_channels, kernel_size, stride, padding);
+             layer_id, worker_id, num_workers, in_channels, worker_out_channels, kernel_size, stride, padding);
     
-    // Initialize shared memory system
-    if (shm_init() < 0) {
-        log_error("Failed to initialize shared memory system");
-        return -1;
-    }
-    
+
     // Calculate dimensions for input (from previous layer) and output
-    int input_length = 300;  // Initial input length from HEAD
+    int input_length = g_model_config->layers[layer_id].input_length;  // Initial input length from HEAD
     int output_length = (input_length + 2 * padding - kernel_size) / stride + 1;
     
-    // For layer_id > 0, input channels come from previous layer's total output
-    // For now, assume previous layer has same number of workers outputting 16 channels each
-    // Layer 0 (HEAD): 1 channel  
-    // Layer 1 (1 worker): 16 channels from 1 worker = 16
-    // Layer 2 (2 workers): 16 channels from 2 workers = 32
-    // etc.
+    conv1d_config_t* conv_config = create_conv1d_config(in_channels, worker_out_channels, kernel_size, stride, padding);
     
-    // Attach to input layer's shared memory (read-only access)
-    shm_layer_id_t input_layer = (shm_layer_id_t)layer_id;
-    if (shm_create_segment(input_layer, in_channels, input_length, 1) < 0) {
-        log_error("Failed to attach to input layer %d shared memory", layer_id);
-        shm_cleanup();
-        return -1;
-    }
-    
-    // Create output layer's shared memory segment  
-    // Total output channels = num_workers * out_channels (16 channels per worker)
-    shm_layer_id_t output_layer = (shm_layer_id_t)(layer_id + 1);
-    int total_output_channels = num_workers * out_channels;
-    if (shm_create_segment(output_layer, total_output_channels, output_length, num_workers) < 0) {
-        log_error("Failed to create output layer %d shared memory", layer_id + 1);
-        shm_cleanup();
-        return -1;
-    }
-    
-    // Create gradient shared memory segment for backward pass
-    // Map layer ID to correct gradient segment
-    shm_layer_id_t grad_segment;
-    switch (layer_id) {
-        case 0: grad_segment = SHM_GRAD_LAYER0; break;
-        case 1: grad_segment = SHM_GRAD_LAYER1; break;
-        case 2: grad_segment = SHM_GRAD_LAYER2; break;
-        case 3: grad_segment = SHM_GRAD_LAYER3; break;
-        default:
-            log_error("Invalid layer_id %d for gradient mapping", layer_id);
-            shm_cleanup();
-            return -1;
-    }
-    
-    // **CORRECTED GRADIENT SIZING: Only Worker 0 creates, others attach**
-    // Gradient segment for THIS layer receives gradients from DOWNSTREAM layer workers
-    // Contributors = number of workers in the NEXT layer (who write gradients back to this layer)
-    
-    int downstream_workers = get_downstream_worker_count(layer_id);
-    int gradient_channels = total_output_channels;  // **CORRECTED: Use TOTAL layer output channels, not per-worker**
-    int current_layer_workers = get_current_layer_worker_count(layer_id);  // Workers in THIS layer
-    int gradient_contributors = downstream_workers;  // How many DOWNSTREAM workers write gradients to THIS layer
-    
-    log_info("Worker %d: %s gradient segment %d with: total_out_channels=%d, contributors=%d, length=%d", 
-             device_id, (worker_id == 0) ? "Creating" : "Attaching to", grad_segment, 
-             gradient_channels, gradient_contributors, output_length);
-    
-    // Only Worker 0 creates gradient segment, others attach to existing
-    if (shm_create_segment(grad_segment, gradient_channels, output_length, gradient_contributors) < 0) {
-        log_error("Failed to create gradient shared memory for layer %d", layer_id);
-        shm_cleanup();
-        return -1;
-    }
-    
-    // **CRITICAL FIX: Workers also need to attach to PREVIOUS layer gradient segment to write gradients**
-    if (layer_id > 0) {
-        shm_layer_id_t prev_grad_segment;
-        switch (layer_id - 1) {
-            case 0: prev_grad_segment = SHM_GRAD_LAYER0; break;
-            case 1: prev_grad_segment = SHM_GRAD_LAYER1; break;
-            case 2: prev_grad_segment = SHM_GRAD_LAYER2; break;
-            case 3: prev_grad_segment = SHM_GRAD_LAYER3; break;
-            default:
-                log_error("Invalid previous layer_id %d for gradient mapping", layer_id - 1);
-                shm_cleanup();
-                return -1;
-        }
-        
-        // Previous layer dimensions (where we write gradients to)
-        // CORRECTED: Match the gradient segment the previous layer created
-        int prev_layer_id = layer_id - 1;
-        int prev_out_channels = get_layer_output_channels(g_model_config, prev_layer_id);  // **Previous layer's OUTPUT channels**
-        int prev_contributors = get_downstream_worker_count(prev_layer_id);  // How many downstream workers (us) write gradients
-        int prev_length = input_length;   // Previous layer's output length
-        
-        log_info("Worker %d: Attaching to prev gradient segment %d with: out_channels=%d, contributors=%d, length=%d",
-                 device_id, prev_grad_segment, prev_out_channels, prev_contributors, prev_length);
-        
-        // Attach to previous layer gradient segment (write-only) - use SAME parameters as that layer used to create it
-        if (shm_create_segment(prev_grad_segment, prev_out_channels, prev_length, prev_contributors) < 0) {
-            log_error("Failed to attach to previous layer gradient segment %d", prev_grad_segment);
-            shm_cleanup();
-            return -1;
-        }
-        
-        log_info("Worker attached to previous layer gradient segment %d for backward pass", prev_grad_segment);
-    }
+    float* grad_weights = malloc(conv_config->weights_size);
+    float* grad_bias    = malloc(conv_config->bias_size);
 
-    log_info("Worker shared memory initialized successfully (forward + backward)");
+    // --- Momentum velocity buffers (Option B) ---
+    int num_w = conv_config->weights_size / sizeof(float);
+    int num_b = conv_config->bias_size / sizeof(float);
+    float* vel_weights = (float*)calloc(num_w, sizeof(float));
+    float* vel_bias    = (float*)calloc(num_b, sizeof(float));
+    float momentum = 0.9f;
+
+    // --- Epoch tracking for LR schedule (Option C) ---
+    int current_epoch = 0;
+    int prev_is_testing = 0;
     
-    // **NEW: Sequential processing instead of threading**
-    
-    // Initialize pipeline control  
-    if (shm_init_pipeline_control() < 0) {
-        log_error("Failed to initialize pipeline control");
-        shm_cleanup();
+
+    // --- IPC SHM/SEM SETUP B/W PREV AND CURRENT ---
+    char prev_shm_name[64], prev_fwd_sem_name[64], prev_bwd_sem_name[64];
+    snprintf(prev_shm_name, sizeof(prev_shm_name), "/ipc_tensor_L%d", layer_id);
+    snprintf(prev_fwd_sem_name, sizeof(prev_fwd_sem_name), "/ipc_sem_L%d_fwd", layer_id);
+    snprintf(prev_bwd_sem_name, sizeof(prev_bwd_sem_name), "/ipc_sem_L%d_bwd", layer_id);
+
+    // Calculate correct shared memory size based on previous layer's total output
+
+    size_t prev_shm_size = sizeof(ipc_layer_shm_t) + sizeof(float) * in_channels * input_length*2; // Double size for input data and backward gradients
+    int attach = 0;
+    void* prev_shm_ptr = NULL;
+    if (ipc_tensor_open(prev_shm_name, prev_shm_size, attach, &prev_shm_ptr) < 0) {
+        log_error("Failed to open shared memory %s", prev_shm_name);
         return -1;
     }
-    
-    // Create worker context for Conv1D processing
-    worker_context_t* ctx = create_worker_context(device_id, layer_id, in_channels, out_channels, 
-                                                   kernel_size, stride, padding);
-    if (!ctx) {
-        log_error("Failed to create worker context");
-        shm_cleanup();
+    sem_t* prev_fwd_sem = NULL;
+    if (ipc_sem_open(prev_fwd_sem_name, attach, &prev_fwd_sem) < 0) {
+        log_error("Failed to open forward semaphore %s", prev_fwd_sem_name);
+        ipc_tensor_close(prev_shm_ptr, prev_shm_size);
         return -1;
     }
+    sem_t* prev_bwd_sem = NULL;
+    if (ipc_sem_open(prev_bwd_sem_name, attach, &prev_bwd_sem) < 0) {
+        log_error("Failed to open backward semaphore %s", prev_bwd_sem_name);
+        ipc_sem_close(prev_fwd_sem);
+        ipc_tensor_close(prev_shm_ptr, prev_shm_size);
+        return -1;
+    }
+    ipc_layer_shm_t* prev_shm = (ipc_layer_shm_t*)prev_shm_ptr;
+
+    // --- IPC SHM/SEM SETUP B/W CURRENT AND NEXT ---
+    int create = (worker_id == 0) ? 1 : 0;
+    char next_shm_name[64], next_fwd_sem_name[64], next_bwd_sem_name[64];
+    snprintf(next_shm_name, sizeof(next_shm_name), "/ipc_tensor_L%d", layer_id + 1);
+    snprintf(next_fwd_sem_name, sizeof(next_fwd_sem_name), "/ipc_sem_L%d_fwd", layer_id + 1);
+    snprintf(next_bwd_sem_name, sizeof(next_bwd_sem_name), "/ipc_sem_L%d_bwd", layer_id + 1);
+
+    size_t next_shm_size = sizeof(ipc_layer_shm_t) + sizeof(float) * out_channels * output_length*2; // Double size for forward output and backward gradients
+    void* next_shm_ptr = NULL;
+    if (ipc_tensor_open(next_shm_name, next_shm_size, create, &next_shm_ptr) < 0) {
+        log_error("Failed to create output shared memory %s", next_shm_name);
+        ipc_sem_close(prev_fwd_sem);
+        ipc_sem_close(prev_bwd_sem);
+        ipc_tensor_close(prev_shm_ptr, prev_shm_size);
+        return -1;
+    }
+    sem_t* next_fwd_sem = NULL;
+    if (ipc_sem_open(next_fwd_sem_name, create, &next_fwd_sem) < 0) {
+        log_error("Failed to create output forward semaphore %s", next_fwd_sem_name);
+        ipc_tensor_close(next_shm_ptr, next_shm_size);
+        ipc_sem_close(prev_fwd_sem);
+        ipc_sem_close(prev_bwd_sem);
+        ipc_tensor_close(prev_shm_ptr, prev_shm_size);
+        return -1;
+    }
+    sem_t* next_bwd_sem = NULL;
+    if (ipc_sem_open(next_bwd_sem_name, create, &next_bwd_sem) < 0) {
+        log_error("Failed to create output backward semaphore %s", next_bwd_sem_name);
+        ipc_sem_close(next_fwd_sem);
+        ipc_tensor_close(next_shm_ptr, next_shm_size);
+        ipc_sem_close(prev_fwd_sem);
+        ipc_sem_close(prev_bwd_sem);
+        ipc_tensor_close(prev_shm_ptr, prev_shm_size);
+        return -1;
+    }
+    ipc_layer_shm_t* next_shm = (ipc_layer_shm_t*)next_shm_ptr;
+
+
+    float* data_input_buffer = prev_shm->buffer;  //[in_channels * input_length,in_channels * input_length] = [input data, output gradient]
+    float* data_output_buffer = next_shm->buffer; //[out_channels * output_length, out_channels * output_length] = [output data, input gradient]
+    float* grad_input_buffer = next_shm->buffer + (out_channels * output_length); 
+    float* grad_output_buffer = prev_shm->buffer + (in_channels * input_length); 
+
+
+    // ---------- INPUT ----------
+    tensor_t input_tensor;
+    input_tensor.batch_size = 1;
+    input_tensor.channels   = in_channels;
+    input_tensor.length     = input_length;
+    input_tensor.data       = data_input_buffer; // Use buffer for input data from previous layer's shared memory
+
+    // ---------- FORWARD ----------
+    tensor_t conv_out;
+    conv_out.batch_size = 1;
+    conv_out.channels   = worker_out_channels;
+    conv_out.length     = output_length;
+    conv_out.data       = malloc(sizeof(float) * worker_out_channels * output_length);
+
+    tensor_t gn_out = conv_out;
+    gn_out.data = malloc(sizeof(float) * worker_out_channels * output_length);
+    tensor_t gn_pre_relu = gn_out;
+    gn_pre_relu.data = malloc(sizeof(float) * worker_out_channels * output_length);
+
+    // ---------- BACKWARD ----------
+    tensor_t grad_out = conv_out;
+    grad_out.data = malloc(sizeof(float) * worker_out_channels * output_length);
+
+    tensor_t grad_gn = conv_out;
+    grad_gn.data = malloc(sizeof(float) * worker_out_channels * output_length);
+
+    tensor_t grad_input;
+    grad_input.batch_size = 1;
+    grad_input.channels   = in_channels;
+    grad_input.length     = input_length;
+    grad_input.data       = malloc(sizeof(float) * in_channels * input_length);
+
+    tensor_t grad_conv;
+    grad_conv.batch_size = 1;
+    grad_conv.channels   = worker_out_channels;
+    grad_conv.length     = output_length;
+    grad_conv.data       = malloc(sizeof(float) * worker_out_channels * output_length);
+
     
-    // Set shared memory parameters
-    ctx->layer_id = layer_id;
-    ctx->worker_id = worker_id;
-    ctx->num_workers = num_workers;
-    
-    log_info("Worker device configured: %d→%d Conv1D layer (sequential mode)", in_channels, out_channels);
-    
-    // **MAIN SEQUENTIAL TRAINING LOOP WITH SAMPLE ID COORDINATION**
-    int expected_sample_id = 1;
+    log_info("starting round loop...............");
+    int round = 1;
     while (1) {
-        // **FORWARD PHASE - P2P: Wait for correct sample ID**
-        
-        log_debug("Worker %d (Layer %d): Waiting for sample %d...", device_id, layer_id, expected_sample_id);
-        
-        // **Wait for ALL upstream workers to complete writing**
-        log_debug("Worker %d: Waiting for all upstream workers to complete forward write", device_id);
-        if (shm_wait_for_forward_complete(input_layer) < 0) {
-            log_info("Worker %d: Shutdown during forward wait", device_id);
-            break;
+        log_info("Worker %d (Layer %d): Starting round %d", device_id, layer_id, round);
+        if (worker_id == 0) {
+            memset(grad_output_buffer, 0,sizeof(float) * in_channels * input_length); // Clear backward gradient buffer for this new sample
+            __sync_synchronize();
         }
         
-        // **Check sample ID after all writes complete**
-        int current_sample = shm_get_current_sample_id(input_layer);
-        if (current_sample != expected_sample_id) {
-            log_error("Worker %d: Sample ID mismatch! Expected %d, got %d", 
-                     device_id, expected_sample_id, current_sample);
-            // Continue anyway to maintain pipeline flow
-        }
+        // log_info("Worker %d (Layer %d): Waiting for sample %d...", device_id, layer_id, round);
+        sem_wait(prev_fwd_sem);
+        // log_info("Worker %d (Layer %d): Detected sample %d ready", device_id, layer_id, round);
+        log_info("Worker %d (Layer %d): Input[0-4]: %.4f %.4f %.4f %.4f %.4f",
+                 device_id, layer_id, round,
+                 input_tensor.data[0], input_tensor.data[1],
+                 input_tensor.data[2], input_tensor.data[3],
+                 input_tensor.data[4]);
+        memset(grad_weights, 0, conv_config->weights_size);
+        memset(grad_bias, 0, conv_config->bias_size);
+
+        conv1d_forward(&input_tensor, conv_config, &conv_out);
+        // relu_forward(&conv_out, &gn_out);
+        int num_groups = 8; 
+        group_norm_forward(&conv_out, &gn_pre_relu, num_groups);
+        relu_forward(&gn_pre_relu, &gn_out);
         
-        log_debug("Worker %d (Layer %d): All upstream complete, processing sample %d", 
-                 device_id, layer_id, expected_sample_id);
-        
-        // **Read COMPLETE input from previous layer**
-        // All workers in this layer receive the same complete input
-        if (shm_read_complete_layer_output(input_layer, ctx->forward_input) < 0) {
-            log_error("Worker %d: Failed to read complete input tensor", device_id);
-            break;
-        }
-        
-        // **Clear forward_ready after reading (each worker clears independently)**
-        shm_clear_forward_ready(input_layer);
-        
-        // Set sample ID in input tensor
-        ctx->forward_input->sample_id = expected_sample_id;
-        
-        // Log input data received
-        log_info("Worker %d (Layer %d): Sample %d, Input[0-4]: %.4f %.4f %.4f %.4f %.4f",
-                 device_id, layer_id, expected_sample_id,
-                 ctx->forward_input->data[0], ctx->forward_input->data[1],
-                 ctx->forward_input->data[2], ctx->forward_input->data[3],
-                 ctx->forward_input->data[4]);
-        
-        // Forward computation: Conv1D + GroupNorm + ReLU
-        conv1d_forward(ctx->forward_input, ctx->conv_config, ctx->forward_temp);
-        
-        // Group normalization  
-        int num_groups = 8;
-        if (out_channels % num_groups != 0) num_groups = 4;
-        if (out_channels % num_groups != 0) num_groups = 1;
-        group_norm_forward(ctx->forward_temp, ctx->forward_output, num_groups);
-        
-        // ReLU activation
-        relu_forward(ctx->forward_output, ctx->forward_output);
-        
-        // **CRITICAL: Set sample ID in output tensor for next layer**
-        ctx->forward_output->sample_id = expected_sample_id;
-        
-        // Write output to shared memory at worker offset
-        if (shm_write_tensor(output_layer, worker_id, ctx->forward_output) < 0) {
-            log_error("Worker %d: Failed to write forward output", device_id);
-            break;
-        }
-        
+
         // Log output data produced
         log_info("Worker %d (Layer %d): Sample %d, Output[0-4]: %.4f %.4f %.4f %.4f %.4f",
-                 device_id, layer_id, expected_sample_id,
-                 ctx->forward_output->data[0], ctx->forward_output->data[1],
-                 ctx->forward_output->data[2], ctx->forward_output->data[3],
-                 ctx->forward_output->data[4]);
-        
-        log_debug("Worker %d: Forward complete, sample %d", device_id, expected_sample_id);
-        
-        // **Signal completion - last worker will set forward_ready and update sample_id**
-        if (shm_signal_forward_complete(output_layer, expected_sample_id) < 0) {
-            log_error("Worker %d: Failed to signal forward completion", device_id);
-            break;
-        }
-        
-        log_info("Worker %d (Layer %d): Sample %d forward signaled",
-                 device_id, layer_id, expected_sample_id);
-        
-        // **BACKWARD PHASE - P2P: Wait for downstream layer gradients**
-        
-        // Map layer ID to correct gradient segment
-        shm_layer_id_t grad_layer;
-        switch (layer_id) {
-            case 0: grad_layer = SHM_GRAD_LAYER0; break;
-            case 1: grad_layer = SHM_GRAD_LAYER1; break;
-            case 2: grad_layer = SHM_GRAD_LAYER2; break;
-            case 3: grad_layer = SHM_GRAD_LAYER3; break;
-            default:
-                log_error("Worker %d: Invalid layer_id %d", device_id, layer_id);
-                grad_layer = SHM_GRAD_LAYER0;
-                break;
-        }
-        
-        log_debug("Worker %d: Waiting for all downstream workers to complete gradient write...", device_id);
-        
-        // **Wait for ALL downstream workers to complete writing gradients**
-        if (shm_wait_for_backward_complete(grad_layer) < 0) {
-            log_info("Worker %d: Shutdown during backward wait", device_id);
-            break;
-        }
-        
-        log_debug("Worker %d: All downstream gradients complete, starting backward", device_id);
-        
-        // **CORRECTED: Read and aggregate gradients from ALL downstream workers**
-        if (shm_read_aggregated_gradients(grad_layer, ctx->backward_grad_output) < 0) {
-            log_error("Worker %d: Failed to read aggregated gradients", device_id);
-            break;
-        }
-        
-        // **Clear backward_ready after reading (each worker clears independently)**
-        shm_clear_backward_ready(grad_layer);
-        
-        // Log gradients received
-        log_info("Worker %d (Layer %d): Sample %d, GradIn[0-4]: %.6f %.6f %.6f %.6f %.6f",
-                 device_id, layer_id, expected_sample_id,
-                 ctx->backward_grad_output->data[0], ctx->backward_grad_output->data[1],
-                 ctx->backward_grad_output->data[2], ctx->backward_grad_output->data[3],
-                 ctx->backward_grad_output->data[4]);
-        
-        // For Layer 0: Signal sample completion after backward pass
-        if (layer_id == 0) {
-            shm_signal_sample_complete(expected_sample_id);
-            log_info("Worker %d: Signaled sample %d completion to Head", device_id, expected_sample_id);
-        }
-        
-        // Simplified backward computation (mock gradients for now)
-        // Full implementation would compute weight gradients and input gradients
-        if (layer_id > 0) {
-            // **CORRECTED: Use backward_grad_input dimensions, not forward_input**
-            // Create mock gradients for previous layer (scaled input)
-            int grad_elements = ctx->backward_grad_input->channels * ctx->backward_grad_input->length;
-            for (int i = 0; i < grad_elements; i++) {
-                // Use modulo to safely handle dimension differences
-                int input_idx = i % (ctx->forward_input->channels * ctx->forward_input->length);
-                ctx->backward_grad_input->data[i] = ctx->forward_input->data[input_idx] * 0.01f;
+                 device_id, layer_id, round,
+                 gn_out.data[0], gn_out.data[1],
+                 gn_out.data[2], gn_out.data[3],
+                 gn_out.data[4]);
+
+        // Write output to next layer's shared memory at the correct offset
+        next_shm->is_testing = prev_shm->is_testing; // Pass along training/testing flag
+        next_shm->label = prev_shm->label; // Pass along label for loss calculation in tail
+        memcpy(data_output_buffer + worker_id * worker_out_channels * output_length, gn_out.data,sizeof(float) * worker_out_channels * output_length);
+
+        int new_val = ipc_counter_increment(&next_shm->counter);
+        if (new_val == num_workers) {
+            for (int w = 0; w < next_layer_num_workers; w++) {
+                sem_post(next_fwd_sem);
             }
-            
-            log_debug("Worker %d: Generated %d gradient elements from %d input elements", 
-                     device_id, grad_elements, ctx->forward_input->channels * ctx->forward_input->length);
-            
-            // Map previous layer ID to gradient segment
-            shm_layer_id_t prev_grad_layer;
-            switch (layer_id - 1) {
-                case 0: prev_grad_layer = SHM_GRAD_LAYER0; break;
-                case 1: prev_grad_layer = SHM_GRAD_LAYER1; break;
-                case 2: prev_grad_layer = SHM_GRAD_LAYER2; break;
-                case 3: prev_grad_layer = SHM_GRAD_LAYER3; break;
-                default:
-                    log_error("Worker %d: Invalid prev layer_id %d", device_id, layer_id - 1);
-                    break;
-            }
-            
-            // **CORRECTED: Convert device_id to contributor index for gradient writing**
-            // Layer 0: device 1 → contributor 0
-            // Layer 1: devices 2,3 → contributors 0,1  
-            // Layer 2: devices 4,5,6 → contributors 0,1,2
-            // Layer 3: devices 7,8,9,10 → contributors 0,1,2,3
-            int contributor_index = worker_id;  // Use worker_id (0-based) instead of device_id
-            
-            log_debug("Worker %d (worker_id=%d): Writing gradient contribution %d to prev layer %d", 
-                      device_id, worker_id, contributor_index, prev_grad_layer);
-            
-            // **CORRECTED: Write gradient contribution to previous layer**
-            // Each worker writes complete gradients w.r.t. the input it received
-            if (shm_write_gradient_contribution(prev_grad_layer, contributor_index, ctx->backward_grad_input) < 0) {
-                log_error("Worker %d: Failed to write gradient contribution", device_id);
-                // Continue processing instead of breaking - allows forward pipeline to continue
-                log_info("Worker %d: Continuing without gradient contribution for sample %d", device_id, expected_sample_id);
-            } else {
-                log_debug("Worker %d: Successfully wrote gradient contribution for sample %d", device_id, expected_sample_id);
-            }
-            
-            log_debug("Worker %d: Wrote gradient contribution to layer %d", device_id, layer_id - 1);
-            
-            // **Signal completion - last worker will set backward_ready**
-            if (shm_signal_backward_complete(prev_grad_layer, expected_sample_id) < 0) {
-                log_error("Worker %d: Failed to signal backward completion", device_id);
+            __sync_lock_test_and_set(&next_shm->counter, 0);
+        }
+
+        // log_info("Worker %d (Layer %d): Completed forward pass for sample %d", device_id, layer_id, round);
+        sem_wait(next_bwd_sem);
+        // log_info("Worker %d (Layer %d): Detected backward pass start for sample %d", device_id, layer_id, round);
+        int is_testing = prev_shm->is_testing;
+
+        // --- Detect epoch boundary: testing -> training = new epoch ---
+        if (prev_is_testing == 1 && is_testing == 0) {
+            current_epoch++;
+            log_info("Worker %d (Layer %d): Epoch %d started, LR=%.6f",
+                     device_id, layer_id, current_epoch,
+                     lr_schedule(g_model_config->learning_rate, current_epoch));
+        }
+        prev_is_testing = is_testing;
+
+        if(!is_testing){
+            float* grad_ptr = grad_input_buffer + worker_id * worker_out_channels * output_length;
+            memcpy(grad_out.data,grad_ptr,sizeof(float) * worker_out_channels * output_length);
+            log_info("Worker %d (Layer %d): Sample %d, Grad Input[0-4]: %.4f %.4f %.4f %.4f %.4f",
+                     device_id, layer_id, round,
+                     grad_out.data[0], grad_out.data[1],
+                     grad_out.data[2], grad_out.data[3],
+                     grad_out.data[4]);
+            // relu_backward(&grad_out, &conv_out, &grad_gn);
+            // conv1d_backward(&grad_gn,&input_tensor,conv_config,&grad_input,grad_weights,grad_bias);
+            relu_backward(&grad_out, &gn_pre_relu, &grad_gn);
+            log_info("relu output[0-4]: %.4f %.4f %.4f %.4f %.4f", 
+                     gn_pre_relu.data[0], gn_pre_relu.data[1], gn_pre_relu.data[2],
+                     gn_pre_relu.data[3], gn_pre_relu.data[4]);
+            group_norm_backward(&conv_out, &grad_gn, &grad_conv, num_groups);
+            log_info("gn backward output[0-4]: %.4f %.4f %.4f %.4f %.4f", 
+                     grad_conv.data[0], grad_conv.data[1], grad_conv.data[2],
+                     grad_conv.data[3], grad_conv.data[4]);
+            conv1d_backward(&grad_conv,&input_tensor,conv_config,&grad_input,grad_weights,grad_bias);
+            log_info("conv backward output[0-4]: %.4f %.4f %.4f %.4f %.4f", 
+                     grad_input.data[0], grad_input.data[1], grad_input.data[2],
+                     grad_input.data[3], grad_input.data[4]);
+            // Option C: LR schedule (warmup + decay)
+            float base_lr = g_model_config->learning_rate;
+            float lr = lr_schedule(base_lr, current_epoch);
+            // Option B: SGD with momentum
+            sgd_momentum_update(conv_config->weights, grad_weights, vel_weights, num_w, lr, momentum);
+            sgd_momentum_update_bias(conv_config->bias, grad_bias, vel_bias, num_b, lr, momentum);
+            log_info("weights[0-4]: %.4f %.4f %.4f %.4f %.4f", 
+                     conv_config->weights[0], conv_config->weights[1], conv_config->weights[2],
+                     conv_config->weights[3], conv_config->weights[4]);
+            log_info("bias[0-4]: %.4f %.4f %.4f %.4f %.4f", 
+                     conv_config->bias[0], conv_config->bias[1], conv_config->bias[2],
+                     conv_config->bias[3], conv_config->bias[4]);
+            log_info("Worker %d (Layer %d): Sample %d, Grad Output[0-4]: %.4f %.4f %.4f %.4f %.4f",
+                     device_id, layer_id, round,
+                     grad_input.data[0], grad_input.data[1],
+                     grad_input.data[2], grad_input.data[3],
+                     grad_input.data[4]);
+            // Write gradients back to previous layer's shared memory
+            float* prev_grad_ptr = grad_output_buffer; // Buffer for this worker's output gradients to previous layer
+            for (int i = 0; i < in_channels * input_length; i++) {
+                prev_grad_ptr[i] += grad_input.data[i];
             }
         }
         
-        log_debug("Worker %d: Backward complete", device_id);
-        
-        // Check if training epoch is complete
-        if (g_pipeline_ctrl && *g_pipeline_ctrl == PHASE_DONE) {
-            log_info("Worker %d: Epoch complete, exiting", device_id);
-            break;
+        int bwd_val = ipc_counter_increment(&prev_shm->bwd_counter);
+        if (bwd_val == num_workers) {
+            for (int w = 0; w < prev_layer_num_workers; w++) {
+                sem_post(prev_bwd_sem);
+            }
+            __sync_lock_test_and_set(&prev_shm->bwd_counter, 0);
         }
-        
-        // Move to next sample
-        log_debug("Worker %d: Moving to next sample %d", device_id, expected_sample_id + 1);
-        expected_sample_id++;
-        
-        log_debug("Worker %d: Starting loop iteration for sample %d", device_id, expected_sample_id);
+
+        round++;
     }
-    
+
     log_info("Worker device processing completed");
-    
-    // Print statistics
-    log_info("Worker %d statistics: %d samples processed", device_id, expected_sample_id - 1);
-    
-    // Cleanup
-    free_worker_context(ctx);
-    shm_cleanup();
-    
+
+    ipc_sem_close(prev_fwd_sem);
+    ipc_sem_close(prev_bwd_sem);
+    ipc_tensor_close(prev_shm_ptr, prev_shm_size);
+    ipc_sem_close(next_fwd_sem);
+    ipc_sem_close(next_bwd_sem);
+    ipc_tensor_close(next_shm_ptr, next_shm_size);
+free(conv_out.data);
+free(gn_out.data);
+free(gn_pre_relu.data);
+free(grad_out.data);
+free(grad_gn.data);
+free(grad_input.data);
+free(grad_conv.data);
+free(grad_weights);
+free(grad_bias);
+free(vel_weights);
+free(vel_bias);
+
+    free_conv1d_config(conv_config);
     log_info("Worker device %d completed successfully", device_id);
     return 0;
 }

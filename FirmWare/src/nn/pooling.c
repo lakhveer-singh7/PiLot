@@ -179,3 +179,53 @@ void global_max_pooling1d_backward(const tensor_t* grad_output, const tensor_t* 
         }
     }
 }
+
+void dual_pooling1d_backward(const tensor_t* grad_output,const tensor_t* input,tensor_t* grad_input){
+    if (!grad_output || !input || !grad_input ||
+        !grad_output->data || !input->data || !grad_input->data) {
+        log_error("Invalid tensors for dual pooling backward");
+        return;
+    }
+
+    int B = input->batch_size;
+    int C = input->channels;
+    int L = input->length;
+
+    // grad_output: [B, 2C, 1]
+    // grad_input : [B, C, L]
+
+    // Initialize gradients to zero
+    tensor_fill_zeros(grad_input);
+
+    for (int b = 0; b < B; b++) {
+        for (int c = 0; c < C; c++) {
+
+            /* -------- Global Average Pooling Backward -------- */
+            int gap_out_idx = b * (2 * C) + c;
+            float gap_grad = grad_output->data[gap_out_idx] / (float)L;
+
+            for (int l = 0; l < L; l++) {
+                int in_idx = b * C * L + c * L + l;
+                grad_input->data[in_idx] += gap_grad;
+            }
+
+            /* -------- Global Max Pooling Backward -------- */
+            int max_pos = 0;
+            float max_val = -FLT_MAX;
+
+            for (int l = 0; l < L; l++) {
+                int in_idx = b * C * L + c * L + l;
+                float v = input->data[in_idx];
+                if (v > max_val) {
+                    max_val = v;
+                    max_pos = l;
+                }
+            }
+
+            int gmp_out_idx = b * (2 * C) + C + c;
+            int max_in_idx  = b * C * L + c * L + max_pos;
+
+            grad_input->data[max_in_idx] += grad_output->data[gmp_out_idx];
+        }
+    }
+}

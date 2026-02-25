@@ -1,18 +1,16 @@
 {
   "model": {
-    "name": "nRF52840_UniformCNN",
+    "name": "nRF52840_UniformCNN_ECG5000",
     "version": "2.0"
   },
-
   "global": {
-    "dataset": "Cricket_X",
+    "dataset": "ECG5000",
     "epochs": 20,
-    "num_classes": 12,
-    "input_length": 300,
+    "num_classes": 5,
+    "input_length": 140,
     "memory_limit_bytes": 220000,
     "learning_rate": 0.01
   },
-
   "layers": [
     {
       "id": 0,
@@ -24,8 +22,8 @@
       "kernel_size": 5,
       "stride": 1,
       "padding": 2,
-      "input_length": 300,
-      "output_length": 300
+      "input_length": 140,
+      "output_length": 140
     },
     {
       "id": 1,
@@ -37,16 +35,16 @@
       "kernel_size": 5,
       "stride": 2,
       "padding": 2,
-      "input_length": 300,
-      "output_length": 150
+      "input_length": 140,
+      "output_length": 70
     },
     {
       "id": 2,
       "type": "fc",
-      "input_length": 150,
+      "input_length": 70,
       "pooling": ["avg", "max"],
       "in_features": 96,
-      "out_features": 12,
+      "out_features": 5,
       "num_devices": 1
     }
   ]

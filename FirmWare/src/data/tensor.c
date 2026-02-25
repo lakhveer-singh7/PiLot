@@ -30,9 +30,6 @@ void* sim_malloc(size_t size) {
 
 void sim_free(void* ptr) {
     if (ptr) {
-        // For proper tracking, we need to track sizes
-        // Using malloc_usable_size would be ideal but not portable
-        // For now, we'll use a wrapper approach
         free(ptr);
         g_allocation_count--;
         log_debug("Freed memory block (remaining allocations: %d)", g_allocation_count);
@@ -111,8 +108,7 @@ void tensor_fill_random(tensor_t* tensor) {
 
 void tensor_fill_zeros(tensor_t* tensor) {
     if (!tensor || !tensor->data) return;
-    
-    memset(tensor->data, 0, tensor->allocated_size);
+    memset(tensor->data, 0, tensor->channels * tensor->length * sizeof(float));  
 }
 
 void tensor_copy(tensor_t* dst, const tensor_t* src) {

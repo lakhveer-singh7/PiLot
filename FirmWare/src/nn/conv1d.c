@@ -72,9 +72,7 @@ void conv1d_forward(const tensor_t* input, const conv1d_config_t* config, tensor
               kernel_size, stride, padding);
 }
 
-void conv1d_backward(const tensor_t* grad_output, const tensor_t* input, 
-                     const conv1d_config_t* config, tensor_t* grad_input,
-                     float* grad_weights, float* grad_bias) {
+void conv1d_backward(const tensor_t* grad_output, const tensor_t* input, const conv1d_config_t* config, tensor_t* grad_input,float* grad_weights, float* grad_bias) {
     if (!grad_output || !input || !config || !grad_input || 
         !grad_output->data || !input->data || !config->weights || !grad_input->data) {
         log_error("Invalid arguments for conv1d backward");
@@ -108,7 +106,7 @@ void conv1d_backward(const tensor_t* grad_output, const tensor_t* input,
                 
                 // Gradient w.r.t. bias
                 if (grad_bias) {
-                    grad_bias[out_c] += grad_out / batch_size;
+                    grad_bias[out_c] += grad_out;
                 }
                 
                 // Gradients w.r.t. weights and input
@@ -128,7 +126,7 @@ void conv1d_backward(const tensor_t* grad_output, const tensor_t* input,
                             
                             // Gradient w.r.t. weights
                             if (grad_weights) {
-                                grad_weights[weight_idx] += grad_out * input_val / batch_size;
+                                grad_weights[weight_idx] += grad_out * input_val;
                             }
                         }
                     }
@@ -247,3 +245,149 @@ void group_norm_forward(tensor_t* input, tensor_t* output, int num_groups) {
     
     log_debug("Group norm: %d groups, mean normalization applied", num_groups);
 }
+
+
+void group_norm_backward(const tensor_t* input,const tensor_t* grad_output,tensor_t* grad_input,int num_groups) {
+    log_info("Group norm backward: num_groups=%d", num_groups);
+    if (!input || !grad_output || !grad_input ||
+        !input->data || !grad_output->data || !grad_input->data) {
+        log_error("Invalid tensors for group_norm_backward");
+        return;
+    }
+    log_info("Group norm backward: num_groups=%d", num_groups);
+    int B = input->batch_size;
+    int C = input->channels;
+    int L = input->length;
+
+    if (C % num_groups != 0) {
+        log_error("Channels (%d) not divisible by num_groups (%d)", C, num_groups);
+        return;
+    }
+
+    int G = num_groups;
+    int CpG = C / G;              // channels per group
+    int N = CpG * L;              // elements per group
+    const float eps = 1e-5f;
+    log_info("Group norm backward: B=%d, C=%d, L=%d, G=%d, CpG=%d", B, C, L, G, CpG);
+    tensor_fill_zeros(grad_input);
+    log_info("Group norm backward: B=%d, C=%d, L=%d, G=%d, CpG=%d", B, C, L, G, CpG);
+    for (int b = 0; b < B; b++) {
+        const float* x     = input->data + b * C * L;
+        const float* dy    = grad_output->data + b * C * L;
+        float* dx          = grad_input->data + b * C * L;
+
+        for (int g = 0; g < G; g++) {
+            int c_start = g * CpG;
+            int c_end   = c_start + CpG;
+
+            /* ---- compute mean ---- */
+            float mean = 0.0f;
+            for (int c = c_start; c < c_end; c++) {
+                for (int l = 0; l < L; l++) {
+                    mean += x[c * L + l];
+                }
+            }
+            mean /= (float)N;
+
+            /* ---- compute variance ---- */
+            float var = 0.0f;
+            for (int c = c_start; c < c_end; c++) {
+                for (int l = 0; l < L; l++) {
+                    float v = x[c * L + l] - mean;
+                    var += v * v;
+                }
+            }
+            var /= (float)N;
+
+            float inv_std = 1.0f / sqrtf(var + eps);
+
+            /* ---- compute sums needed for backward ---- */
+            float sum_dy = 0.0f;
+            float sum_dy_xmu = 0.0f;
+
+            for (int c = c_start; c < c_end; c++) {
+                for (int l = 0; l < L; l++) {
+                    int idx = c * L + l;
+                    float xmu = x[idx] - mean;
+                    sum_dy += dy[idx];
+                    sum_dy_xmu += dy[idx] * xmu;
+                }
+            }
+            
+            /* ---- backward formula ---- */
+            for (int c = c_start; c < c_end; c++) {
+                for (int l = 0; l < L; l++) {
+                    int idx = c * L + l;
+                    float xmu = x[idx] - mean;
+
+                    dx[idx] =
+                        inv_std * (
+                            dy[idx]
+                            - sum_dy / N
+                            - xmu * sum_dy_xmu / (N * (var + eps))
+                        );
+                }
+            }
+        }
+    }
+
+    log_info("Group norm backward done..................");
+}
+
+
+
+// // Backward pass for group normalization
+// void group_norm_backward(const tensor_t* input, const tensor_t* grad_output, tensor_t* grad_input, int num_groups) {
+//     if (!input || !grad_output || !grad_input || !input->data || !grad_output->data || !grad_input->data) {
+//         log_error("Invalid tensors for group_norm_backward");
+//         return;
+//     }
+
+//     int batch_size = input->batch_size;
+//     int channels = input->channels;
+//     int length = input->length;
+//     int group_size = channels / num_groups;
+
+//     // For each batch
+//     for (int b = 0; b < batch_size; b++) {
+//         float* input_data = input->data + b * channels * length;
+//         float* grad_out_data = grad_output->data + b * channels * length;
+//         float* grad_in_data = grad_input->data + b * channels * length;
+
+//         // For each group
+//         for (int g = 0; g < num_groups; g++) {
+//             int c_start = g * group_size;
+//             int c_end = (g + 1) * group_size;
+
+//             // Compute mean and variance for this group
+//             float mean = 0.0f, var = 0.0f;
+//             int count = 0;
+//             for (int c = c_start; c < c_end; c++) {
+//                 for (int l = 0; l < length; l++) {
+//                     int idx = c * length + l;
+//                     mean += input_data[idx];
+//                     count++;
+//                 }
+//             }
+//             mean /= count;
+//             for (int c = c_start; c < c_end; c++) {
+//                 for (int l = 0; l < length; l++) {
+//                     int idx = c * length + l;
+//                     float diff = input_data[idx] - mean;
+//                     var += diff * diff;
+//                 }
+//             }
+//             var /= count;
+//             float std = sqrtf(var + 1e-5f);
+
+//             // Backpropagate
+//             for (int c = c_start; c < c_end; c++) {
+//                 for (int l = 0; l < length; l++) {
+//                     int idx = c * length + l;
+//                     // Simple gradient: pass through normalized grad_output
+//                     grad_in_data[idx] = grad_out_data[idx] / std;
+//                 }
+//             }
+//         }
+//     }
+// }

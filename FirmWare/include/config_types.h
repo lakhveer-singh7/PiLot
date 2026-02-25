@@ -8,32 +8,32 @@
 #define MAX_CONFIG_PATH 512
 
 // Layer types
-typedef enum {
-    LAYER_CONV1D,
-    LAYER_POOLING,
-    LAYER_FULLY_CONNECTED,
-    LAYER_ACTIVATION
-} layer_type_t;
+// typedef enum {
+//     LAYER_CONV1D,
+//     LAYER_POOLING,
+//     LAYER_FULLY_CONNECTED,
+//     LAYER_ACTIVATION
+// } layer_type_t;
 
 // Connection types
-typedef enum {
-    CONN_FORWARD,
-    CONN_BACKWARD
-} connection_type_t;
+// typedef enum {
+//     CONN_FORWARD,
+//     CONN_BACKWARD
+// } connection_type_t;
 
 // Tensor shape
 typedef struct {
-    int batch_size;
+    int batch_size;  
     int channels;
     int length;
 } tensor_shape_t;
 
 // Connection configuration
-typedef struct {
-    int device_id;
-    int port;
-    connection_type_t type;
-} connection_config_t;
+// typedef struct {
+//     int device_id;
+//     int port;
+//     connection_type_t type;
+// } connection_config_t;
 
 // Conv1D layer configuration
 typedef struct {
@@ -51,13 +51,13 @@ typedef struct {
 } fc_layer_config_t;
 
 // Generic layer configuration
-typedef struct {
-    layer_type_t type;
-    union {
-        conv1d_layer_config_t conv1d;
-        fc_layer_config_t fc;
-    } params;
-} layer_config_t;
+// typedef struct {
+//     layer_type_t type;
+//     union {
+//         conv1d_layer_config_t conv1d;
+//         fc_layer_config_t fc;
+//     } params;
+// } layer_config_t;
 
 // Model layer configuration (from model config JSON)
 typedef struct {
@@ -69,6 +69,8 @@ typedef struct {
     int stride;
     int padding;
     int num_devices;
+    int input_length;  // For conv1d, this is the length of the input sequence; for fc, this is in_features
+    int output_length; // For conv1d, this is the length of the output sequence; for fc, this is out_features
     // FC layer fields
     int in_features;
     int out_features;
@@ -85,11 +87,12 @@ typedef struct {
     int num_classes;
     int input_length;
     int memory_limit_bytes;
-    
+    float learning_rate;
     // Layer definitions
     int num_layers;
     model_layer_t layers[MAX_LAYERS];
 } model_config_t;
+
 typedef struct {
     int device_id;
     device_role_t role;
@@ -101,17 +104,17 @@ typedef struct {
     
     // Layer configurations
     int num_layers;
-    layer_config_t layers[MAX_LAYERS];
+    // layer_config_t layers[MAX_LAYERS];
     
     // Connection topology
-    int num_upstream;
-    connection_config_t upstream_conns[MAX_CONNECTIONS];
+    // int num_upstream;
+    // connection_config_t upstream_conns[MAX_CONNECTIONS];
     
-    int num_downstream;
-    connection_config_t downstream_conns[MAX_CONNECTIONS];
+    // int num_downstream;
+    // connection_config_t downstream_conns[MAX_CONNECTIONS];
     
-    int num_backward;
-    connection_config_t backward_conns[MAX_CONNECTIONS];
+    // int num_backward;
+    // connection_config_t backward_conns[MAX_CONNECTIONS];
     
     // Tensor dimensions
     tensor_shape_t input_shape;

@@ -16,7 +16,7 @@ void relu_forward(tensor_t* input, tensor_t* output) {
     
     int total_elements = input->batch_size * input->channels * input->length;
     for (int i = 0; i < total_elements; i++) {
-        output->data[i] = input->data[i] > 0.0f ? input->data[i] : 0.0f;
+        output->data[i] = input->data[i] > 0.0f ? input->data[i] : 0.01f * input->data[i]; // Leaky ReLU with alpha=0.01
     }
 }
 
@@ -29,8 +29,9 @@ void relu_backward(const tensor_t* grad_output, const tensor_t* input, tensor_t*
     
     int total_elements = input->batch_size * input->channels * input->length;
     for (int i = 0; i < total_elements; i++) {
-        grad_input->data[i] = input->data[i] > 0.0f ? grad_output->data[i] : 0.0f;
+        grad_input->data[i] = input->data[i] > 0.0f ? grad_output->data[i] : 0.01f * grad_output->data[i]; // Gradient through Leaky ReLU
     }
+    log_info("ReLu backward done..................");
 }
 
 void softmax_forward(tensor_t* input, tensor_t* output) {
@@ -93,33 +94,54 @@ float cross_entropy_loss(const tensor_t* predictions, const int* true_labels, in
     return total_loss / num_samples;
 }
 
-void cross_entropy_backward(const tensor_t* predictions, const int* true_labels, 
-                           int num_samples, tensor_t* grad_output) {
-    if (!predictions || !true_labels || !grad_output || 
-        !predictions->data || !grad_output->data) {
-        log_error("Invalid arguments for cross_entropy_backward");
-        return;
-    }
-    
-    int num_classes = predictions->channels;
-    
-    // Initialize gradients
-    tensor_fill_zeros(grad_output);
-    
-    for (int i = 0; i < num_samples; i++) {
-        int true_label = true_labels[i];
-        if (true_label < 0 || true_label >= num_classes) continue;
-        
-        float* grad_batch = grad_output->data + i * num_classes;
-        float* pred_batch = predictions->data + i * num_classes;
-        
-        // Gradient of cross-entropy w.r.t. softmax output
+void cross_entropy_backward(const tensor_t* softmax_output,const int* true_labels,int batch_size,tensor_t* grad_logits) {
+    int num_classes = softmax_output->channels;
+
+    for (int b = 0; b < batch_size; b++) {
+        float* grad = grad_logits->data + b * num_classes;
+        float* prob = softmax_output->data + b * num_classes;
+        int label = true_labels[b];
+
         for (int j = 0; j < num_classes; j++) {
-            if (j == true_label) {
-                grad_batch[j] = (pred_batch[j] - 1.0f) / num_samples;
-            } else {
-                grad_batch[j] = pred_batch[j] / num_samples;
-            }
+            grad[j] = prob[j];
         }
+        grad[label] -= 1.0f;
+    }
+
+    float inv_bs = 1.0f / batch_size;
+    for (int i = 0; i < batch_size * num_classes; i++) {
+        grad_logits->data[i] *= inv_bs;
     }
 }
+
+
+// void cross_entropy_backward(const tensor_t* predictions, const int* true_labels, 
+//                            int num_samples, tensor_t* grad_output) {
+//     if (!predictions || !true_labels || !grad_output || 
+//         !predictions->data || !grad_output->data) {
+//         log_error("Invalid arguments for cross_entropy_backward");
+//         return;
+//     }
+    
+//     int num_classes = predictions->channels;
+    
+//     // Initialize gradients
+//     tensor_fill_zeros(grad_output);
+    
+//     for (int i = 0; i < num_samples; i++) {
+//         int true_label = true_labels[i];
+//         if (true_label < 0 || true_label >= num_classes) continue;
+        
+//         float* grad_batch = grad_output->data + i * num_classes;
+//         float* pred_batch = predictions->data + i * num_classes;
+        
+//         // Gradient of cross-entropy w.r.t. softmax output
+//         for (int j = 0; j < num_classes; j++) {
+//             if (j == true_label) {
+//                 grad_batch[j] = (pred_batch[j] - 1.0f) / num_samples;
+//             } else {
+//                 grad_batch[j] = pred_batch[j] / num_samples;
+//             }
+//         }
+//     }
+// }

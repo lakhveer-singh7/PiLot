@@ -1,485 +1,303 @@
 #include "lw_pilot_sim.h"
 #include "nn_types.h"
 #include "config_types.h"
-#include "shared_memory.h"
+#include "ipc_tensor.h"
+#include <time.h>
+#include <sys/resource.h>
+
+static long get_rss_kb(void) {
+    struct rusage r;
+    getrusage(RUSAGE_SELF, &r);
+    return r.ru_maxrss;
+}
 
 // External configuration
-extern device_json_config_t* g_device_config;
 extern model_config_t* g_model_config;
 
-// For shutdown detection - declared in shared_memory.c
-extern volatile pipeline_phase_t* g_pipeline_ctrl;
-
-// Forward declarations from nn layers
-void dual_pooling1d(const tensor_t* input, tensor_t* output);
-void global_average_pooling1d_backward(const tensor_t* grad_output, const tensor_t* input, tensor_t* grad_input);
-void global_max_pooling1d_backward(const tensor_t* grad_output, const tensor_t* input, tensor_t* grad_input);
-void fully_connected_forward(const tensor_t* input, const fc_config_t* config, tensor_t* output);
-void fully_connected_backward(const tensor_t* grad_output, const tensor_t* input, 
-                             const fc_config_t* config, tensor_t* grad_input,
-                             float* grad_weights, float* grad_bias);
-fc_config_t* create_fc_config(int in_features, int out_features);
-void free_fc_config(fc_config_t* config);
-void softmax_forward(tensor_t* input, tensor_t* output);
-float cross_entropy_loss(const tensor_t* predictions, const int* true_labels, int num_samples);
-void cross_entropy_backward(const tensor_t* predictions, const int* true_labels, 
-                           int num_samples, tensor_t* grad_output);
-
-typedef struct {
-    int device_id;
-    int num_classes;
-    
-    // Neural network layers
-    fc_config_t* fc_config;
-    
-    // Forward pass tensors
-    tensor_t* conv_features;    // Input from worker device
-    tensor_t* pooled_features;  // After dual pooling
-    tensor_t* fc_output;        // Fully connected output
-    tensor_t* probabilities;    // After softmax
-    
-    // Backward pass tensors
-    tensor_t* grad_fc_output;   // Gradient from loss
-    tensor_t* grad_pooled;      // Gradient for pooled features
-    tensor_t* grad_conv;        // Gradient to send back to worker
-    
-    // Gradient buffers (reusable)
-    float* grad_weights;
-    float* grad_bias;
-    size_t grad_weights_size;
-    size_t grad_bias_size;
-    
-    // Statistics
-    int samples_processed;
-    int correct_predictions;
-    float total_loss;
-    
-} tail_context_t;
-
-static void sgd_update(float* weights, const float* grads, size_t size_bytes, float lr) {
-    if (!weights || !grads) return;
-    size_t count = size_bytes / sizeof(float);
-    for (size_t i = 0; i < count; i++) {
-        weights[i] -= lr * grads[i];
-    }
-}
-
-tail_context_t* create_tail_context(int device_id, int num_classes, int input_channels, int input_length) {
-    tail_context_t* ctx = (tail_context_t*)sim_malloc(sizeof(tail_context_t));
-    if (!ctx) {
-        return NULL;
-    }
-    
-    memset(ctx, 0, sizeof(tail_context_t));
-    ctx->device_id = device_id;
-    ctx->num_classes = num_classes;
-    
-    // Create fully connected layer: (input_channels * 2) → num_classes
-    // Factor of 2 because dual pooling concatenates GAP and GMP
-    int fc_input_size = input_channels * 2;
-    ctx->fc_config = create_fc_config(fc_input_size, num_classes);
-    if (!ctx->fc_config) {
-        sim_free_tracked(ctx, sizeof(tail_context_t));
-        return NULL;
-    }
-    
-    // Allocate tensors
-    ctx->conv_features = tensor_create(1, input_channels, input_length);
-    ctx->pooled_features = tensor_create(1, fc_input_size, 1);  // Flattened pooled features
-    ctx->fc_output = tensor_create(1, num_classes, 1);
-    ctx->probabilities = tensor_create(1, num_classes, 1);
-    ctx->grad_fc_output = tensor_create(1, num_classes, 1);
-    ctx->grad_pooled = tensor_create(1, fc_input_size, 1);
-    ctx->grad_conv = tensor_create(1, input_channels, input_length);
-    
-    if (!ctx->conv_features || !ctx->pooled_features || !ctx->fc_output || 
-        !ctx->probabilities || !ctx->grad_fc_output || !ctx->grad_pooled || !ctx->grad_conv) {
-        if (ctx->conv_features) tensor_free(ctx->conv_features);
-        if (ctx->pooled_features) tensor_free(ctx->pooled_features);
-        if (ctx->fc_output) tensor_free(ctx->fc_output);
-        if (ctx->probabilities) tensor_free(ctx->probabilities);
-        if (ctx->grad_fc_output) tensor_free(ctx->grad_fc_output);
-        if (ctx->grad_pooled) tensor_free(ctx->grad_pooled);
-        if (ctx->grad_conv) tensor_free(ctx->grad_conv);
-        free_fc_config(ctx->fc_config);
-        sim_free_tracked(ctx, sizeof(tail_context_t));
-        return NULL;
-    }
-    
-    // Allocate gradient buffers once (reusable across all samples)
-    ctx->grad_weights_size = ctx->fc_config->weights_size;
-    ctx->grad_bias_size = ctx->fc_config->bias_size;
-    ctx->grad_weights = (float*)sim_malloc(ctx->grad_weights_size);
-    ctx->grad_bias = (float*)sim_malloc(ctx->grad_bias_size);
-    
-    if (!ctx->grad_weights || !ctx->grad_bias) {
-        log_error("Failed to allocate gradient buffers");
-        if (ctx->grad_weights) sim_free_tracked(ctx->grad_weights, ctx->grad_weights_size);
-        if (ctx->grad_bias) sim_free_tracked(ctx->grad_bias, ctx->grad_bias_size);
-        tensor_free(ctx->conv_features);
-        tensor_free(ctx->pooled_features);
-        tensor_free(ctx->fc_output);
-        tensor_free(ctx->probabilities);
-        tensor_free(ctx->grad_fc_output);
-        tensor_free(ctx->grad_pooled);
-        tensor_free(ctx->grad_conv);
-        free_fc_config(ctx->fc_config);
-        sim_free_tracked(ctx, sizeof(tail_context_t));
-        return NULL;
-    }
-    
-    log_info("Created tail context for device %d: %d classes, %d input channels",
-             device_id, num_classes, input_channels);
-    
-    return ctx;
-}
-
-void free_tail_context(tail_context_t* ctx) {
-    if (ctx) {
-        if (ctx->conv_features) tensor_free(ctx->conv_features);
-        if (ctx->pooled_features) tensor_free(ctx->pooled_features);
-        if (ctx->fc_output) tensor_free(ctx->fc_output);
-        if (ctx->probabilities) tensor_free(ctx->probabilities);
-        if (ctx->grad_fc_output) tensor_free(ctx->grad_fc_output);
-        if (ctx->grad_pooled) tensor_free(ctx->grad_pooled);
-        if (ctx->grad_conv) tensor_free(ctx->grad_conv);
-        if (ctx->grad_weights) sim_free_tracked(ctx->grad_weights, ctx->grad_weights_size);
-        if (ctx->grad_bias) sim_free_tracked(ctx->grad_bias, ctx->grad_bias_size);
-        if (ctx->fc_config) free_fc_config(ctx->fc_config);
-        sim_free_tracked(ctx, sizeof(tail_context_t));
-    }
-}
-
-int tail_forward_pass(tail_context_t* ctx, int true_label) {
-    // 1. Dual Pooling (GAP + GMP)
-    dual_pooling1d(ctx->conv_features, ctx->pooled_features);
-    
-    // 2. Fully Connected layer
-    fully_connected_forward(ctx->pooled_features, ctx->fc_config, ctx->fc_output);
-    
-    // 3. Softmax
-    softmax_forward(ctx->fc_output, ctx->probabilities);
-    
-    // 4. Compute loss
-    float loss = cross_entropy_loss(ctx->probabilities, &true_label, 1);
-    ctx->total_loss += loss;
-    
-    // 5. Get prediction
-    int predicted_label = 0;
-    float max_prob = ctx->probabilities->data[0];
-    for (int i = 1; i < ctx->num_classes; i++) {
-        if (ctx->probabilities->data[i] > max_prob) {
-            max_prob = ctx->probabilities->data[i];
-            predicted_label = i;
+static int argmax(const float* x, int n) {
+    int idx = 0;
+    float max = x[0];
+    for (int i = 1; i < n; i++) {
+        if (x[i] > max) {
+            max = x[i];
+            idx = i;
         }
     }
-    
-    if (predicted_label == true_label) {
-        ctx->correct_predictions++;
-    }
-    
-    log_debug("Tail forward: predicted=%d, true=%d, loss=%.4f", 
-              predicted_label, true_label, loss);
-    
-    return predicted_label;
-}
-
-void tail_backward_pass(tail_context_t* ctx, int true_label) {
-    const float learning_rate = 0.001f;
-    // 1. Compute gradient from cross-entropy loss
-    cross_entropy_backward(ctx->probabilities, &true_label, 1, ctx->grad_fc_output);
-    
-    // 2. Backward through fully connected layer
-    fully_connected_backward(ctx->grad_fc_output, ctx->pooled_features, 
-                            ctx->fc_config, ctx->grad_pooled,
-                            ctx->grad_weights, ctx->grad_bias);
-
-    // SGD update on FC weights/bias
-    sgd_update(ctx->fc_config->weights, ctx->grad_weights, ctx->fc_config->weights_size, learning_rate);
-    sgd_update(ctx->fc_config->bias, ctx->grad_bias, ctx->fc_config->bias_size, learning_rate);
-    
-    // 3. Backward through dual pooling (GAP + GMP)
-    int input_channels = ctx->conv_features->channels;
-    int input_length = ctx->conv_features->length;
-    
-    // Split gradient: first half is GAP, second half is GMP
-    for (int c = 0; c < input_channels; c++) {
-        float gap_grad = ctx->grad_pooled->data[c] / (float)input_length;
-        float gmp_grad = ctx->grad_pooled->data[c + input_channels];
-        
-        // Find max position for GMP gradient
-        int max_pos = 0;
-        float max_val = ctx->conv_features->data[c * input_length];
-        for (int l = 1; l < input_length; l++) {
-            int idx = c * input_length + l;
-            if (ctx->conv_features->data[idx] > max_val) {
-                max_val = ctx->conv_features->data[idx];
-                max_pos = l;
-            }
-        }
-        
-        // Apply gradients
-        for (int l = 0; l < input_length; l++) {
-            int idx = c * input_length + l;
-            ctx->grad_conv->data[idx] = gap_grad;  // GAP contribution
-            if (l == max_pos) {
-                ctx->grad_conv->data[idx] += gmp_grad;  // Add GMP contribution
-            }
-        }
-    }
-    
-    log_debug("Tail backward: gradients computed");
+    return idx;
 }
 
 int run_tail_device(int device_id, int num_classes) {
     log_info("Starting Tail Device %d (Classifier) with %d classes", device_id, num_classes);
     
-    // Initialize shared memory system
-    if (shm_init() < 0) {
-        log_error("Failed to initialize shared memory");
-        return -1;
-    }
-    
-    // Get configuration from model config
     if (!g_model_config) {
         log_error("Model configuration is required for tail device");
         return -1;
     }
-    
-    // Find the last conv layer to determine input
-    int last_conv_layer_id = -1;
-    int total_input_channels = 0;
-    
-    for (int i = 0; i < g_model_config->num_layers; i++) {
-        if (strcmp(g_model_config->layers[i].type, "conv1d") == 0) {
-            last_conv_layer_id = i;
-            total_input_channels = g_model_config->layers[i].out_channels;
-        }
-    }
-    
-    if (last_conv_layer_id < 0) {
-        log_error("No convolutional layers found in model config");
-        return -1;
-    }
-    
-    log_info("Tail will read from Layer %d output (%d channels)", 
-             last_conv_layer_id + 1, total_input_channels);
-    
-    // Configuration for shared memory-based communication
-    int num_workers = g_model_config->layers[last_conv_layer_id].num_devices;
-    int max_input_length = g_model_config->input_length;
-    
-    // Calculate actual input length after all conv layers
-    for (int i = 0; i <= last_conv_layer_id; i++) {
-        if (strcmp(g_model_config->layers[i].type, "conv1d") == 0) {
-            int kernel_size = g_model_config->layers[i].kernel_size;
-            int stride = g_model_config->layers[i].stride; 
-            int padding = g_model_config->layers[i].padding;
-            max_input_length = (max_input_length + 2 * padding - kernel_size) / stride + 1;
-        }
-    }
-    
-    // Determine which shared memory layer to read from
-    shm_layer_id_t input_layer = (shm_layer_id_t)(last_conv_layer_id + 1);
-    
-    log_info("Tail reading from shared memory layer %d (%d channels, length %d)", 
-             input_layer, total_input_channels, max_input_length);
-    
-    // Attach to previous layer output shared memory
-    if (shm_create_segment(input_layer, total_input_channels, max_input_length, 1) < 0) {
-        log_error("Failed to attach to layer %d shared memory", input_layer);
-        shm_cleanup();
-        return -1;
-    }
 
-    // Attach to gradient segment for backpropagation 
-    // CORRECTED: Attach to existing segment created by Layer workers
-    shm_layer_id_t grad_layer = (shm_layer_id_t)(SHM_GRAD_LAYER0 - last_conv_layer_id);
-    
-    // Gradient segment sizing: Gradients w.r.t. last layer's OUTPUT (which is Tail's input)
-    // Tail writes gradients w.r.t. its input (= last conv layer's output)
-    int grad_output_channels = total_input_channels;  // Last layer's OUTPUT channels
-    int grad_contributors = 1;  // Only Tail writes to this segment
-    
-    log_info("Tail: Attaching to existing gradient segment %d with: grad_output_channels=%d, contributors=%d, length=%d",
-             grad_layer, grad_output_channels, grad_contributors, max_input_length);
-    
-    // Attach to existing gradient segment (created by Layer Worker 0)
-    if (shm_create_segment(grad_layer, grad_output_channels, max_input_length, grad_contributors) < 0) {
-        log_error("Failed to attach to gradient segment %d", grad_layer);
-        shm_cleanup();
+    int last_layer = g_model_config->num_layers - 2;
+    log_info("Tail device will read from layer %d", last_layer);
+
+    // --- IPC SHM/SEM SETUP (Read from last worker layer) ---
+    int num_workers_prev_layer = g_model_config->layers[last_layer].num_devices;
+    int in_channels = g_model_config->layers[last_layer].out_channels;
+    int input_length = g_model_config->layers[last_layer].output_length;
+    log_info("Tail expects input from layer %d with %d channels and length %d", 
+             last_layer, in_channels, input_length);
+
+     // Open shared memory and semaphores for last layer
+    char shm_name[64], fwd_sem_name[64], bwd_sem_name[64];
+    snprintf(shm_name, sizeof(shm_name), "/ipc_tensor_L%d", last_layer +1);
+    snprintf(fwd_sem_name, sizeof(fwd_sem_name), "/ipc_sem_L%d_fwd", last_layer+1 );
+    snprintf(bwd_sem_name, sizeof(bwd_sem_name), "/ipc_sem_L%d_bwd", last_layer +1);
+
+    size_t shm_size = sizeof(ipc_layer_shm_t) + sizeof(float) * in_channels * input_length*2; // Double size for forward input and backward gradients
+    void* shm_ptr = NULL;
+    if (ipc_tensor_open(shm_name, shm_size, 0, &shm_ptr) < 0) {
+        log_error("Tail: Failed to open shared memory for last layer");
         return -1;
     }
-    log_info("Attached to gradient segment %d for backpropagation", grad_layer);
-    
-    // Create tail context
-    tail_context_t* ctx = create_tail_context(device_id, num_classes, total_input_channels, max_input_length);
-    if (!ctx) {
-        log_error("Failed to create tail context");
-        shm_cleanup();
+    log_info("Tail: Opened shared memory %s (size %zu)", shm_name, shm_size);
+    sem_t* fwd_sem = NULL;
+    if (ipc_sem_open(fwd_sem_name, 0, &fwd_sem) < 0) {
+        log_error("Tail: Failed to open forward semaphore for last layer");
+        ipc_tensor_close(shm_ptr, shm_size);
         return -1;
     }
-    
-    // Initialize pipeline control
-    if (shm_init_pipeline_control() < 0) {
-        log_error("Failed to initialize pipeline control");
-        free_tail_context(ctx);
-        shm_cleanup();
+    log_info("Tail: Opened forward semaphore %s", fwd_sem_name);
+    sem_t* bwd_sem = NULL;
+    if (ipc_sem_open(bwd_sem_name, 0, &bwd_sem) < 0) {
+        log_error("Tail: Failed to open backward semaphore for last layer");
+        ipc_sem_close(fwd_sem);
+        ipc_tensor_close(shm_ptr, shm_size);
         return -1;
     }
+    log_info("Tail: Opened backward semaphore %s", bwd_sem_name);
+    ipc_layer_shm_t* shm_tensor = (ipc_layer_shm_t*)shm_ptr;
+
+    log_info("Tail reading from shared memory layer %d (%d channels, length %d)", 
+             last_layer, in_channels, input_length);
     
-    log_info("Tail device ready for classification");
-    
-    // **MAIN SEQUENTIAL PROCESSING LOOP WITH P2P COORDINATION**
-    int expected_sample_id = 1;
-    int last_processed_sample_id = 0;
-    
+
+    float* input_buffer = shm_tensor->buffer; // Use buffer for input data from last layer's shared memory
+    float* grad_buffer = shm_tensor->buffer + (in_channels * input_length); // Use second half of buffer for gradients back to last layer
+
+
+    // FC config
+    int in_features = g_model_config->layers[last_layer+1].in_features;
+    int out_features = g_model_config->layers[last_layer+1].out_features;
+    fc_config_t* fc_config = create_fc_config(in_features, out_features);
+    log_info("Tail FC layer config: in_features=%d, out_features=%d", in_features, out_features);
+    // Setup pooling and fully connected layer
+    tensor_t input_tensor, pooled_tensor, output_tensor;
+    // Assume batch_size = 1 for simplicity
+    input_tensor.batch_size = 1;
+    input_tensor.channels = in_channels;
+    input_tensor.length = input_length;
+    input_tensor.data = input_buffer;
+
+    // Pooling output: [batch_size, 2*channels, 1]
+    pooled_tensor.batch_size = 1;
+    pooled_tensor.channels = in_channels*2;
+    pooled_tensor.length = 1;
+    pooled_tensor.data = (float*)sim_malloc(sizeof(float) * in_channels * 2);
+
+    // FC output: [batch_size, num_classes, 1]
+    output_tensor.batch_size = 1;
+    output_tensor.channels = out_features;
+    output_tensor.length = 1;
+    output_tensor.data = (float*)sim_malloc(sizeof(float) * out_features);
+
+    // softmax probabilities
+    tensor_t prob_tensor;
+    prob_tensor.batch_size = 1;
+    prob_tensor.channels = num_classes;
+    prob_tensor.length = 1;
+    prob_tensor.data = (float*)sim_malloc(sizeof(float) * num_classes);
+
+    // Gradients for backward pass
+    tensor_t grad_output, grad_pooled, grad_input;
+    grad_output.batch_size = 1;
+    grad_output.channels = out_features;
+    grad_output.length = 1;
+    grad_output.data = (float*)sim_malloc(sizeof(float) * out_features);
+    grad_pooled.batch_size = 1;
+    grad_pooled.channels = in_channels*2;
+    grad_pooled.length = 1;
+    grad_pooled.data = (float*)sim_malloc(sizeof(float) * in_channels * 2);
+    grad_input.batch_size = 1;
+    grad_input.channels = in_channels;
+    grad_input.length = input_length;
+    grad_input.data = (float*)sim_malloc(sizeof(float) * in_channels * input_length);
+
+    float* grad_weights = (float*)sim_malloc(fc_config->weights_size);
+    float* grad_bias = (float*)sim_malloc(fc_config->bias_size);
+
+    // --- Momentum velocity buffers (Option B) ---
+    int num_weights = fc_config->weights_size / sizeof(float);
+    int num_biases = fc_config->bias_size / sizeof(float);
+    float* vel_weights = (float*)sim_malloc(fc_config->weights_size);
+    float* vel_bias = (float*)sim_malloc(fc_config->bias_size);
+    memset(vel_weights, 0, fc_config->weights_size);
+    memset(vel_bias, 0, fc_config->bias_size);
+    float momentum = 0.9f;
+
+    // --- Epoch tracking for LR schedule (Option C) + accuracy reset ---
+    int current_epoch = 0;
+    int prev_is_testing = 0;  // track phase transitions
+    int train_sample_count = 0;
+
+    // --- Timing & train accuracy tracking ---
+    struct timespec run_start, epoch_ts, test_sample_start, test_sample_end;
+    clock_gettime(CLOCK_MONOTONIC, &run_start);
+    int train_correct = 0;
+    int train_total = 0;
+    double test_infer_time_sum = 0.0;  // cumulative test inference time per epoch
+    int test_infer_count = 0;
+
+    log_info("Tail device setup complete. Entering main processing loop...");
+    // Main loop: forward and backward pass
+    int correct = 0;
+    int total = 0;
+    float test_loss_sum = 0.0f;
+    int round = 1;
     while (1) {
-        // **FORWARD PHASE - Wait for full Layer 3 forward completion**
-        log_info("Tail: Waiting for input data from Layer %d...", last_conv_layer_id);
-        if (shm_wait_for_forward_complete(input_layer) < 0) {
-            log_info("Tail: Shutdown during forward wait");
-            break;
+        log_info("Tail: Processing sample %d", round);
+        sem_wait(fwd_sem);
+        
+        int is_testing_now = shm_tensor->is_testing;
+        
+        // Start timing BEFORE forward pass for test samples
+        if (is_testing_now) {
+            clock_gettime(CLOCK_MONOTONIC, &test_sample_start);
         }
         
-        log_info("Tail: Input data ready, starting classification");
-        
-        // Check for shutdown
-        if (g_pipeline_ctrl && *g_pipeline_ctrl == PHASE_DONE) {
-            log_info("Tail: Training complete signal received");
-            break;
-        }
-        
-        int current_sample_id = shm_get_current_sample_id(input_layer);
-        int current_label = shm_get_current_label(input_layer);
-        if (current_sample_id <= last_processed_sample_id) {
-            // Avoid reprocessing stale sample when forward_ready remains asserted.
-            usleep(50);
-            continue;
-        }
-        if (current_sample_id != expected_sample_id) {
-            log_error("Tail: Sample ID mismatch! expected=%d got=%d",
-                      expected_sample_id, current_sample_id);
-            expected_sample_id = current_sample_id;
-        }
-        
-        // Read features from shared memory
-        if (shm_read_tensor(input_layer, ctx->conv_features) < 0) {
-            log_error("Tail: Failed to read features tensor");
-            break;
-        }
-        // Tail is the sole consumer of Layer 4 output; consume and clear forward_ready.
-        shm_consume_forward_ready(input_layer);
-        
-        // Log features received from final conv layer
-        log_info("Tail: Sample %d, Input[0-4]: %.4f %.4f %.4f %.4f %.4f",
-                 current_sample_id,
-                 ctx->conv_features->data[0], ctx->conv_features->data[1],
-                 ctx->conv_features->data[2], ctx->conv_features->data[3],
-                 ctx->conv_features->data[4]);
-        
-        // Use true label propagated through shared memory
-        int true_label = current_label;
-        
+        log_info("input[0-4]: %.4f %.4f %.4f %.4f %.4f", 
+                 input_tensor.data[0], input_tensor.data[1], input_tensor.data[2],
+                 input_tensor.data[3], input_tensor.data[4]);
         // Forward pass
-        int predicted_label = tail_forward_pass(ctx, true_label);
-        
-        // Log prediction results
-        log_info("Tail: Sample %d, Predicted=%d, True=%d, Probs[0-2]: %.4f %.4f %.4f",
-                 current_sample_id, predicted_label, true_label,
-                 ctx->probabilities->data[0], ctx->probabilities->data[1],
-                 ctx->probabilities->data[2]);
-        
-        log_debug("Tail: Forward complete (predicted=%d, true=%d)", predicted_label, true_label);
-        
-        // Flag will be overwritten by next layer output
-        // No need to clear
-        
-        // **BACKWARD PHASE - P2P: Start immediately (no waiting for signal)**
-        log_debug("Tail: Starting backward pass");
+        dual_pooling1d(&input_tensor, &pooled_tensor);
+        fully_connected_forward(&pooled_tensor, fc_config, &output_tensor);
+        softmax_forward(&output_tensor, &prob_tensor);
+
+        int label = shm_tensor->label;  // from shared memory
+        float loss = cross_entropy_loss(&prob_tensor, &label, 1);
+        log_info("Loss = %f", loss);
+        log_info("prob[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
+                 prob_tensor.data[0], prob_tensor.data[1], prob_tensor.data[2],
+                 prob_tensor.data[3], prob_tensor.data[4], prob_tensor.data[5],
+                 prob_tensor.data[6], prob_tensor.data[7], prob_tensor.data[8],
+                 prob_tensor.data[9]);
         
         // Backward pass
-        tail_backward_pass(ctx, true_label);
+        int is_testing = shm_tensor->is_testing;
+
+        // --- Detect epoch boundary: transition from testing -> training = new epoch ---
+        if (prev_is_testing == 1 && is_testing == 0) {
+            current_epoch++;
+            float test_acc = (total > 0) ? (float)correct / total * 100.0f : 0.0f;
+            float avg_loss = (total > 0) ? test_loss_sum / total : 0.0f;
+            float train_acc = (train_total > 0) ? (float)train_correct / train_total * 100.0f : 0.0f;
+            double avg_infer_ms = (test_infer_count > 0) ? test_infer_time_sum / test_infer_count * 1000.0 : 0.0;
+
+            clock_gettime(CLOCK_MONOTONIC, &epoch_ts);
+            double timespan = (epoch_ts.tv_sec - run_start.tv_sec) + (epoch_ts.tv_nsec - run_start.tv_nsec) / 1e9;
+
+            time_t now = time(NULL);
+            struct tm *tm_now = localtime(&now);
+            char timestamp[64];
+            strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_now);
+
+            long rss = get_rss_kb();
+
+            log_info("=== EPOCH %d COMPLETE === Test Accuracy: %.2f%% (%d/%d), Avg Loss: %.4f",
+                     current_epoch, test_acc, correct, total, avg_loss);
+            log_info("[METRICS] Timestamp=%s | Timespan=%.1fs | Epoch=%d | Train_Acc=%.2f%% | Test_Acc=%.2f%% | Infer_Latency=%.3fms | Memory=%ldKB",
+                     timestamp, timespan, current_epoch, train_acc, test_acc, avg_infer_ms, rss);
+            // Reset accuracy metrics for next epoch
+            correct = 0;
+            total = 0;
+            test_loss_sum = 0.0f;
+            train_sample_count = 0;
+            train_correct = 0;
+            train_total = 0;
+            test_infer_time_sum = 0.0;
+            test_infer_count = 0;
+        }
+        prev_is_testing = is_testing;
+
+        if(!is_testing) {
+            train_sample_count++;
+            /* Track train accuracy */
+            int train_pred = argmax(prob_tensor.data, num_classes);
+            if (train_pred == label) train_correct++;
+            train_total++;
+            cross_entropy_backward(&prob_tensor, &label, 1, &grad_output);
+            fully_connected_backward(&grad_output, &pooled_tensor, fc_config, &grad_pooled, grad_weights, grad_bias);
+            dual_pooling1d_backward(&grad_pooled, &input_tensor, &grad_input);
         
-        // Write gradients to final layer gradient segment
-        // Map layer ID to correct gradient segment
-        shm_layer_id_t final_grad_layer = SHM_PIPELINE_CTRL;  // Invalid default
-        switch (last_conv_layer_id) {
-            case 0: final_grad_layer = SHM_GRAD_LAYER0; break;
-            case 1: final_grad_layer = SHM_GRAD_LAYER1; break;
-            case 2: final_grad_layer = SHM_GRAD_LAYER2; break;
-            case 3: final_grad_layer = SHM_GRAD_LAYER3; break;
-            default:
-                log_error("Invalid layer ID %d for gradient mapping (only layers 0-3 supported)", last_conv_layer_id);
-                free_tail_context(ctx);
-                shm_cleanup();
-                return -1;
+            // Option C: LR schedule (warmup + decay)
+            float base_lr = g_model_config->learning_rate;
+            float lr = lr_schedule(base_lr, current_epoch);
+            // Option B: SGD with momentum
+            sgd_momentum_update(fc_config->weights, grad_weights, vel_weights, num_weights, lr, momentum);
+            sgd_momentum_update_bias(fc_config->bias, grad_bias, vel_bias, num_biases, lr, momentum);
+            log_info("weights[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
+                     fc_config->weights[0], fc_config->weights[1], fc_config->weights[2],
+                     fc_config->weights[3], fc_config->weights[4], fc_config->weights[5],
+                     fc_config->weights[6], fc_config->weights[7], fc_config->weights[8],
+                     fc_config->weights[9]);
+            log_info("bias[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
+                     fc_config->bias[0], fc_config->bias[1], fc_config->bias[2],
+                     fc_config->bias[3], fc_config->bias[4], fc_config->bias[5],
+                     fc_config->bias[6], fc_config->bias[7], fc_config->bias[8],
+                     fc_config->bias[9]);
+           
+            memcpy(grad_buffer, grad_input.data, sizeof(float) * in_channels * input_length);
+
+        }else{
+            // For testing samples, time inference and compute accuracy
+            int predicted_label = argmax(prob_tensor.data, num_classes);
+            clock_gettime(CLOCK_MONOTONIC, &test_sample_end);
+            double sample_infer_s = (test_sample_end.tv_sec - test_sample_start.tv_sec)
+                                   + (test_sample_end.tv_nsec - test_sample_start.tv_nsec) / 1e9;
+            if (predicted_label == label) {
+                correct++;
+            }
+            total++;
+            test_loss_sum += loss;
+            test_infer_time_sum += sample_infer_s;
+            test_infer_count++;
+            log_info("Testing sample %d: True label=%d, Predicted=%d, Loss=%.4f, Accuracy=%.2f%%",
+                     round, label, predicted_label, loss, (float)correct / total * 100.0f);
         }
         
-        log_debug("Tail: Mapped last_conv_layer_id=%d to final_grad_layer=%d", 
-                 last_conv_layer_id, final_grad_layer);
-        
-        // Write gradients back to the conv layer
-        if (shm_write_tensor(final_grad_layer, 0, ctx->grad_conv) < 0) {
-            log_error("Failed to write gradients to layer %d", final_grad_layer);
-            break;
+        for (int w = 0; w < num_workers_prev_layer; w++) {
+            sem_post(bwd_sem);
         }
-        
-        // **Signal backward completion - Tail is sole writer**
-        if (shm_signal_backward_complete(final_grad_layer, current_sample_id) < 0) {
-            log_error("Tail: Failed to signal backward completion");
-        }
-        log_debug("Tail: Signaled Layer %d gradients ready", last_conv_layer_id);
-        
-        // Layer 0 worker signals sample completion to Head after its backward pass.
-        log_info("Tail: Sample %d backward complete", current_sample_id);
-        
-        // Log gradients sent back
-        log_info("Tail: Sample %d, Gradients[0-4]: %.6f %.6f %.6f %.6f %.6f",
-                 current_sample_id,
-                 ctx->grad_conv->data[0], ctx->grad_conv->data[1],
-                 ctx->grad_conv->data[2], ctx->grad_conv->data[3],
-                 ctx->grad_conv->data[4]);
-        
-        expected_sample_id++;  // Move to next expected sample
-        last_processed_sample_id = current_sample_id;
-        ctx->samples_processed++;
-        
-        log_debug("Tail: Completed sample %d, now expecting %d", 
-                 expected_sample_id - 1, expected_sample_id);
-        
-        log_debug("Tail: Backward complete, gradients written");
-        
-        // Check if training is complete
-        if (shm_get_phase() == PHASE_DONE) {
-            log_info("Tail: Training complete, exiting");
-            break;
-        }
-        
-        // Progress reporting
-        if ((expected_sample_id - 1) % 10 == 0) {
-            float accuracy = (float)ctx->correct_predictions / ctx->samples_processed * 100.0f;
-            float avg_loss = ctx->total_loss / ctx->samples_processed;
-            log_info("Tail: %d samples - Accuracy: %.1f%%, Avg Loss: %.4f", 
-                     expected_sample_id - 1, accuracy, avg_loss);
-        }
+        round++;
     }
     
-    log_info("Tail device processing completed");
-    
-    // Print final statistics
-    float final_accuracy = (float)ctx->correct_predictions / ctx->samples_processed * 100.0f;
-    float final_avg_loss = ctx->total_loss / ctx->samples_processed;
-    log_info("Final Tail Statistics:");
-    log_info("  Samples: %d", ctx->samples_processed);
-    log_info("  Correct: %d", ctx->correct_predictions);
-    log_info("  Accuracy: %.2f%%", final_accuracy);
-    log_info("  Avg Loss: %.4f", final_avg_loss);
+    log_info("Tail device processing completed with %d samples, accuracy %.2f%%", total, (float)correct / total * 100.0f);
+
     
     // Cleanup
-    free_tail_context(ctx);
-    shm_cleanup();
-    
+    free(pooled_tensor.data);
+    free(output_tensor.data);
+    free(prob_tensor.data);
+    free(grad_output.data);
+    free(grad_pooled.data);
+    free(grad_input.data);
+    free(grad_weights);
+    free(grad_bias);
+    free(vel_weights);
+    free(vel_bias);
+    ipc_sem_close(fwd_sem);
+    ipc_sem_close(bwd_sem);
+    ipc_tensor_close(shm_ptr, shm_size);
+    sim_free(fc_config);
+    shm_unlink(shm_name);
+    sem_unlink(bwd_sem_name);
+    sem_unlink(fwd_sem_name);
     log_info("Tail device %d completed successfully", device_id);
     return 0;
 }

@@ -18,11 +18,9 @@ static char g_dataset_name[256] = "Cricket_X";
 static int g_num_classes = 12;
 static int g_debug = 0;
 static char g_config_file[512] = "";
-device_json_config_t* g_device_config = NULL;  // Global, non-static for device access
 model_config_t* g_model_config = NULL;  // Global model configuration
 
 // Runtime parameters (override config) - exported for device implementations
-// Removed socket communication parameters - now using pure shared memory
 int g_in_channels = -1;
 int g_out_channels = -1;
 int g_kernel_size = -1;
@@ -135,68 +133,24 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Load config file if provided
-    if (strlen(g_config_file) > 0) {
-        log_info("Loading configuration from: %s", g_config_file);
-        g_device_config = load_device_config(g_config_file);
-        if (!g_device_config) {
-            log_error("Failed to load config file");
-            return 1;
-        }
-        
-        // Override command-line args with config values
-        g_device_id = g_device_config->device_id;
-        g_device_role = g_device_config->role;
-        
-        if (g_device_config->dataset_name[0]) {
-            strncpy(g_dataset_name, g_device_config->dataset_name, sizeof(g_dataset_name) - 1);
-        }
-        
-        if (g_device_config->num_classes > 0) {
-            g_num_classes = g_device_config->num_classes;
-        }
-    }
-    
     // Load model configuration (all devices need this)
     log_info("Loading model configuration...");
-    g_model_config = load_model_config("configs/model_config_nrf52840_realistic.json");
-    if (!g_model_config) {
-        // Try alternative path if running from build directory
-        g_model_config = load_model_config("../configs/model_config_nrf52840_realistic.json");
-    }
+    const char *cfg_path = (g_config_file[0] != '\0') ? g_config_file : "configs/model_config_ecg5000.json";
+    g_model_config = load_model_config(cfg_path);
+
     if (!g_model_config) {
         log_error("Failed to load model config - tried both configs/ and ../configs/ paths");
         return 1;
     }
     log_info("Model config loaded: %s, %d layers", g_model_config->name, g_model_config->num_layers);
-    
-    // Apply runtime overrides to config (if device config exists)
-    if (g_device_config && g_device_config->num_layers > 0 && g_device_config->layers[0].type == LAYER_CONV1D) {
-        if (g_in_channels > 0) {
-            g_device_config->layers[0].params.conv1d.in_channels = g_in_channels;
-            log_info("Override: in_channels = %d", g_in_channels);
-        }
-        if (g_out_channels > 0) {
-            g_device_config->layers[0].params.conv1d.out_channels = g_out_channels;
-            log_info("Override: out_channels = %d", g_out_channels);
-        }
-        if (g_kernel_size > 0) {
-            g_device_config->layers[0].params.conv1d.kernel_size = g_kernel_size;
-            log_info("Override: kernel_size = %d", g_kernel_size);
-        }
-        if (g_stride > 0) {
-            g_device_config->layers[0].params.conv1d.stride = g_stride;
-            log_info("Override: stride = %d", g_stride);
-        }
-        if (g_padding > 0) {
-            g_device_config->layers[0].params.conv1d.padding = g_padding;
-            log_info("Override: padding = %d", g_padding);
-        }
-        log_info("Configuration loaded and runtime parameters applied");
-    } else {
-        log_info("No configuration file specified, using command-line parameters only");
+
+    // Use dataset name from config if not overridden via CLI
+    if (g_model_config->dataset[0] != '\0' &&
+        strcmp(g_dataset_name, "Cricket_X") == 0) {
+        strncpy(g_dataset_name, g_model_config->dataset, sizeof(g_dataset_name) - 1);
+        log_info("Using dataset from config: %s", g_dataset_name);
     }
-    
+   
     if (g_debug) {
         set_log_level_debug();
     }
@@ -257,10 +211,7 @@ int main(int argc, char* argv[]) {
         print_memory_usage();
     }
     
-    if (g_device_config) {
-        free_device_config(g_device_config);
-    }
-    
+
     log_cleanup();
     
     return result;

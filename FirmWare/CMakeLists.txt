@@ -28,6 +28,8 @@ set(SOURCES
     src/nn/pooling.c
     src/nn/fully_connected.c
     src/nn/activations.c
+    src/nn/optimizers.c
+    src/comm/ipc_tensor.c
     src/comm/shm_protocol.c
     src/data/ucr_loader.c
     src/data/tensor.c

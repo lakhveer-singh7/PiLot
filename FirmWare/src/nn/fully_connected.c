@@ -49,9 +49,7 @@ void fully_connected_forward(const tensor_t* input, const fc_config_t* config, t
     log_debug("FC forward: %dx%d → %dx%d", batch_size, in_features, batch_size, out_features);
 }
 
-void fully_connected_backward(const tensor_t* grad_output, const tensor_t* input, 
-                             const fc_config_t* config, tensor_t* grad_input,
-                             float* grad_weights, float* grad_bias) {
+void fully_connected_backward(const tensor_t* grad_output, const tensor_t* input, const fc_config_t* config, tensor_t* grad_input, float* grad_weights, float* grad_bias) {
     if (!grad_output || !input || !config || !grad_input || 
         !grad_output->data || !input->data || !config->weights || !grad_input->data) {
         log_error("Invalid arguments for fully connected backward");

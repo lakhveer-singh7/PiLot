@@ -79,299 +79,299 @@ static int parse_int(const char* str) {
     return atoi(str);
 }
 
-static void parse_connections(const char* json, const char* section, 
-                              connection_config_t* conns, int* count) {
-    *count = 0;
+// static void parse_connections(const char* json, const char* section, 
+//                               connection_config_t* conns, int* count) {
+//     *count = 0;
     
-    char section_key[256];
-    snprintf(section_key, sizeof(section_key), "\"%s\"", section);
+//     char section_key[256];
+//     snprintf(section_key, sizeof(section_key), "\"%s\"", section);
     
-    char* pos = strstr(json, section_key);
-    if (!pos) {
-        log_debug("Section '%s' not found in JSON", section);
-        return;
-    }
+//     char* pos = strstr(json, section_key);
+//     if (!pos) {
+//         log_debug("Section '%s' not found in JSON", section);
+//         return;
+//     }
     
-    log_debug("Found section '%s' in JSON", section);
+//     log_debug("Found section '%s' in JSON", section);
     
-    pos = strchr(pos, '[');
-    if (!pos) {
-        log_debug("No array found for section '%s'", section);
-        return;
-    }
-    pos++;
+//     pos = strchr(pos, '[');
+//     if (!pos) {
+//         log_debug("No array found for section '%s'", section);
+//         return;
+//     }
+//     pos++;
     
-    // Find the end of this array to limit our search
-    char* array_end = pos;
-    int bracket_depth = 1;
-    while (*array_end && bracket_depth > 0) {
-        if (*array_end == '[') bracket_depth++;
-        if (*array_end == ']') {
-            bracket_depth--;
-            if (bracket_depth == 0) break;
-        }
-        array_end++;
-    }
+//     // Find the end of this array to limit our search
+//     char* array_end = pos;
+//     int bracket_depth = 1;
+//     while (*array_end && bracket_depth > 0) {
+//         if (*array_end == '[') bracket_depth++;
+//         if (*array_end == ']') {
+//             bracket_depth--;
+//             if (bracket_depth == 0) break;
+//         }
+//         array_end++;
+//     }
     
-    if (!*array_end) {
-        log_debug("Could not find end of array for '%s'", section);
-        return;
-    }
+//     if (!*array_end) {
+//         log_debug("Could not find end of array for '%s'", section);
+//         return;
+//     }
     
-    // Parse each connection object within this array only
-    while (*pos && pos < array_end && *count < MAX_CONNECTIONS) {
-        // Skip to next object
-        while (*pos && *pos != '{' && pos < array_end) pos++;
-        if (*pos != '{' || pos >= array_end) break;
-        pos++;
+//     // Parse each connection object within this array only
+//     while (*pos && pos < array_end && *count < MAX_CONNECTIONS) {
+//         // Skip to next object
+//         while (*pos && *pos != '{' && pos < array_end) pos++;
+//         if (*pos != '{' || pos >= array_end) break;
+//         pos++;
         
-        // Find the end of this object
-        char* obj_end = strchr(pos, '}');
-        if (!obj_end || obj_end > array_end) break;
+//         // Find the end of this object
+//         char* obj_end = strchr(pos, '}');
+//         if (!obj_end || obj_end > array_end) break;
         
-        // Extract device_id (within current object only)
-        char* dev_str = pos;
-        while (dev_str < obj_end && strncmp(dev_str, "\"device_id\"", 11) != 0) dev_str++;
-        if (dev_str < obj_end) {
-            dev_str = strchr(dev_str, ':');
-            if (dev_str) {
-                dev_str++;
-                conns[*count].device_id = parse_int(dev_str);
-            }
-        }
+//         // Extract device_id (within current object only)
+//         char* dev_str = pos;
+//         while (dev_str < obj_end && strncmp(dev_str, "\"device_id\"", 11) != 0) dev_str++;
+//         if (dev_str < obj_end) {
+//             dev_str = strchr(dev_str, ':');
+//             if (dev_str) {
+//                 dev_str++;
+//                 conns[*count].device_id = parse_int(dev_str);
+//             }
+//         }
         
-        // Extract port (within current object only)
-        char* port_str = pos;
-        while (port_str < obj_end && strncmp(port_str, "\"port\"", 6) != 0) port_str++;
-        if (port_str < obj_end) {
-            port_str = strchr(port_str, ':');
-            if (port_str) {
-                port_str++;
-                conns[*count].port = parse_int(port_str);
-            }
-        }
+//         // Extract port (within current object only)
+//         char* port_str = pos;
+//         while (port_str < obj_end && strncmp(port_str, "\"port\"", 6) != 0) port_str++;
+//         if (port_str < obj_end) {
+//             port_str = strchr(port_str, ':');
+//             if (port_str) {
+//                 port_str++;
+//                 conns[*count].port = parse_int(port_str);
+//             }
+//         }
         
-        // Extract type (within current object only)
-        char* type_str = pos;
-        while (type_str < obj_end && strncmp(type_str, "\"type\"", 6) != 0) type_str++;
-        if (type_str < obj_end) {
-            type_str = strchr(type_str, '"');
-            if (type_str) {
-                type_str++;
-                type_str = strchr(type_str, '"');
-                if (type_str) {
-                    type_str++;
-                    if (strncmp(type_str, "forward", 7) == 0) {
-                        conns[*count].type = CONN_FORWARD;
-                    } else {
-                        conns[*count].type = CONN_BACKWARD;
-                    }
-                }
-            }
-        }
+//         // Extract type (within current object only)
+//         char* type_str = pos;
+//         while (type_str < obj_end && strncmp(type_str, "\"type\"", 6) != 0) type_str++;
+//         if (type_str < obj_end) {
+//             type_str = strchr(type_str, '"');
+//             if (type_str) {
+//                 type_str++;
+//                 type_str = strchr(type_str, '"');
+//                 if (type_str) {
+//                     type_str++;
+//                     if (strncmp(type_str, "forward", 7) == 0) {
+//                         conns[*count].type = CONN_FORWARD;
+//                     } else {
+//                         conns[*count].type = CONN_BACKWARD;
+//                     }
+//                 }
+//             }
+//         }
         
-        printf("[DEBUG] Parsed connection[%d] for '%s': device_id=%d, port=%d, type=%d\n",
-               *count, section, conns[*count].device_id, conns[*count].port, conns[*count].type);
+//         printf("[DEBUG] Parsed connection[%d] for '%s': device_id=%d, port=%d, type=%d\n",
+//                *count, section, conns[*count].device_id, conns[*count].port, conns[*count].type);
         
-        (*count)++;
+//         (*count)++;
         
-        // Move to next object
-        pos = obj_end + 1;
-    }
+//         // Move to next object
+//         pos = obj_end + 1;
+//     }
     
-    printf("[DEBUG] Total '%s' connections parsed: %d\n", section, *count);
-}
+//     printf("[DEBUG] Total '%s' connections parsed: %d\n", section, *count);
+// }
 
-static void parse_layers(const char* json, layer_config_t* layers, int* count) {
-    *count = 0;
+// static void parse_layers(const char* json, layer_config_t* layers, int* count) {
+//     *count = 0;
     
-    char* pos = strstr(json, "\"layers\"");
-    if (!pos) return;
+//     char* pos = strstr(json, "\"layers\"");
+//     if (!pos) return;
     
-    pos = strchr(pos, '[');
-    if (!pos) return;
-    pos++;
+//     pos = strchr(pos, '[');
+//     if (!pos) return;
+//     pos++;
     
-    // Parse each layer object
-    while (*pos && *pos != ']' && *count < MAX_LAYERS) {
-        // Skip to next object
-        while (*pos && *pos != '{') pos++;
-        if (*pos != '{') break;
+//     // Parse each layer object
+//     while (*pos && *pos != ']' && *count < MAX_LAYERS) {
+//         // Skip to next object
+//         while (*pos && *pos != '{') pos++;
+//         if (*pos != '{') break;
         
-        char layer_obj[512];
-        char* obj_start = pos;
-        int brace_count = 1;
-        pos++;
-        int obj_len = 0;
+//         char layer_obj[512];
+//         char* obj_start = pos;
+//         int brace_count = 1;
+//         pos++;
+//         int obj_len = 0;
         
-        while (*pos && brace_count > 0 && obj_len < 511) {
-            if (*pos == '{') brace_count++;
-            if (*pos == '}') brace_count--;
-            layer_obj[obj_len++] = *pos++;
-        }
-        layer_obj[obj_len-1] = '\0';
+//         while (*pos && brace_count > 0 && obj_len < 511) {
+//             if (*pos == '{') brace_count++;
+//             if (*pos == '}') brace_count--;
+//             layer_obj[obj_len++] = *pos++;
+//         }
+//         layer_obj[obj_len-1] = '\0';
         
-        // Determine layer type
-        if (strstr(layer_obj, "\"conv1d\"")) {
-            layers[*count].type = LAYER_CONV1D;
+//         // Determine layer type
+//         if (strstr(layer_obj, "\"conv1d\"")) {
+//             layers[*count].type = LAYER_CONV1D;
             
-            char* val = find_value(layer_obj, "in_channels");
-            layers[*count].params.conv1d.in_channels = parse_int(val);
-            free(val);
+//             char* val = find_value(layer_obj, "in_channels");
+//             layers[*count].params.conv1d.in_channels = parse_int(val);
+//             free(val);
             
-            val = find_value(layer_obj, "out_channels");
-            layers[*count].params.conv1d.out_channels = parse_int(val);
-            free(val);
+//             val = find_value(layer_obj, "out_channels");
+//             layers[*count].params.conv1d.out_channels = parse_int(val);
+//             free(val);
             
-            val = find_value(layer_obj, "kernel_size");
-            layers[*count].params.conv1d.kernel_size = parse_int(val);
-            free(val);
+//             val = find_value(layer_obj, "kernel_size");
+//             layers[*count].params.conv1d.kernel_size = parse_int(val);
+//             free(val);
             
-            val = find_value(layer_obj, "stride");
-            layers[*count].params.conv1d.stride = parse_int(val);
-            free(val);
+//             val = find_value(layer_obj, "stride");
+//             layers[*count].params.conv1d.stride = parse_int(val);
+//             free(val);
             
-            val = find_value(layer_obj, "padding");
-            layers[*count].params.conv1d.padding = parse_int(val);
-            free(val);
+//             val = find_value(layer_obj, "padding");
+//             layers[*count].params.conv1d.padding = parse_int(val);
+//             free(val);
             
-            (*count)++;
-        } else if (strstr(layer_obj, "\"fc\"")) {
-            layers[*count].type = LAYER_FULLY_CONNECTED;
+//             (*count)++;
+//         } else if (strstr(layer_obj, "\"fc\"")) {
+//             layers[*count].type = LAYER_FULLY_CONNECTED;
             
-            char* val = find_value(layer_obj, "in_features");
-            layers[*count].params.fc.in_features = parse_int(val);
-            free(val);
+//             char* val = find_value(layer_obj, "in_features");
+//             layers[*count].params.fc.in_features = parse_int(val);
+//             free(val);
             
-            val = find_value(layer_obj, "out_features");
-            layers[*count].params.fc.out_features = parse_int(val);
-            free(val);
+//             val = find_value(layer_obj, "out_features");
+//             layers[*count].params.fc.out_features = parse_int(val);
+//             free(val);
             
-            (*count)++;
-        }
-    }
-}
+//             (*count)++;
+//         }
+//     }
+// }
 
-device_json_config_t* load_device_config(const char* config_file) {
-    log_info("Loading device config from: %s", config_file);
+// device_json_config_t* load_device_config(const char* config_file) {
+//     log_info("Loading device config from: %s", config_file);
     
-    char* json = read_file_contents(config_file);
-    if (!json) {
-        return NULL;
-    }
+//     char* json = read_file_contents(config_file);
+//     if (!json) {
+//         return NULL;
+//     }
     
-    device_json_config_t* config = (device_json_config_t*)malloc(sizeof(device_json_config_t));
-    if (!config) {
-        free(json);
-        return NULL;
-    }
+//     device_json_config_t* config = (device_json_config_t*)malloc(sizeof(device_json_config_t));
+//     if (!config) {
+//         free(json);
+//         return NULL;
+//     }
     
-    memset(config, 0, sizeof(device_json_config_t));
+//     memset(config, 0, sizeof(device_json_config_t));
     
-    // Parse device_id
-    char* val = find_value(json, "device_id");
-    config->device_id = parse_int(val);
-    free(val);
+//     // Parse device_id
+//     char* val = find_value(json, "device_id");
+//     config->device_id = parse_int(val);
+//     free(val);
     
-    // Parse role
-    val = find_value(json, "role");
-    if (val) {
-        if (strcmp(val, "head") == 0) config->role = DEVICE_HEAD;
-        else if (strcmp(val, "worker") == 0) config->role = DEVICE_WORKER;
-        else if (strcmp(val, "tail") == 0) config->role = DEVICE_TAIL;
-        free(val);
-    }
+//     // Parse role
+//     val = find_value(json, "role");
+//     if (val) {
+//         if (strcmp(val, "head") == 0) config->role = DEVICE_HEAD;
+//         else if (strcmp(val, "worker") == 0) config->role = DEVICE_WORKER;
+//         else if (strcmp(val, "tail") == 0) config->role = DEVICE_TAIL;
+//         free(val);
+//     }
     
-    // Parse dataset name (for head)
-    val = find_value(json, "dataset");
-    if (val) {
-        strncpy(config->dataset_name, val, sizeof(config->dataset_name) - 1);
-        free(val);
-    }
+//     // Parse dataset name (for head)
+//     val = find_value(json, "dataset");
+//     if (val) {
+//         strncpy(config->dataset_name, val, sizeof(config->dataset_name) - 1);
+//         free(val);
+//     }
     
-    // Parse epochs
-    val = find_value(json, "epochs");
-    config->epochs = parse_int(val);
-    free(val);
+//     // Parse epochs
+//     val = find_value(json, "epochs");
+//     config->epochs = parse_int(val);
+//     free(val);
     
-    // Parse num_classes
-    val = find_value(json, "num_classes");
-    config->num_classes = parse_int(val);
-    free(val);
+//     // Parse num_classes
+//     val = find_value(json, "num_classes");
+//     config->num_classes = parse_int(val);
+//     free(val);
     
-    // Parse memory limit
-    val = find_value(json, "memory_limit");
-    config->memory_limit = parse_int(val);
-    if (config->memory_limit == 0) config->memory_limit = MEMORY_LIMIT_BYTES;
-    free(val);
+//     // Parse memory limit
+//     val = find_value(json, "memory_limit");
+//     config->memory_limit = parse_int(val);
+//     if (config->memory_limit == 0) config->memory_limit = MEMORY_LIMIT_BYTES;
+//     free(val);
     
-    // Parse layers
-    parse_layers(json, config->layers, &config->num_layers);
+//     // Parse layers
+//     parse_layers(json, config->layers, &config->num_layers);
     
-    // Parse connections
-    parse_connections(json, "upstream", config->upstream_conns, &config->num_upstream);
-    printf("[DEBUG] After parsing upstream: num_upstream=%d\n", config->num_upstream);
-    parse_connections(json, "downstream", config->downstream_conns, &config->num_downstream);
-    printf("[DEBUG] After parsing downstream: num_downstream=%d\n", config->num_downstream);
-    parse_connections(json, "backward", config->backward_conns, &config->num_backward);
-    printf("[DEBUG] After parsing backward: num_backward=%d\n", config->num_backward);
+//     // Parse connections
+//     parse_connections(json, "upstream", config->upstream_conns, &config->num_upstream);
+//     printf("[DEBUG] After parsing upstream: num_upstream=%d\n", config->num_upstream);
+//     parse_connections(json, "downstream", config->downstream_conns, &config->num_downstream);
+//     printf("[DEBUG] After parsing downstream: num_downstream=%d\n", config->num_downstream);
+//     parse_connections(json, "backward", config->backward_conns, &config->num_backward);
+//     printf("[DEBUG] After parsing backward: num_backward=%d\n", config->num_backward);
     
-    log_debug("Parsed connections: upstream=%d, downstream=%d, backward=%d",
-              config->num_upstream, config->num_downstream, config->num_backward);
+//     log_debug("Parsed connections: upstream=%d, downstream=%d, backward=%d",
+//               config->num_upstream, config->num_downstream, config->num_backward);
     
-    // Parse tensor shapes
-    val = find_value(json, "input_channels");
-    if (val) {
-        config->input_shape.channels = parse_int(val);
-        free(val);
-    }
+//     // Parse tensor shapes
+//     val = find_value(json, "input_channels");
+//     if (val) {
+//         config->input_shape.channels = parse_int(val);
+//         free(val);
+//     }
     
-    val = find_value(json, "input_length");
-    if (val) {
-        config->input_shape.length = parse_int(val);
-        free(val);
-    }
-    config->input_shape.batch_size = 1;
+//     val = find_value(json, "input_length");
+//     if (val) {
+//         config->input_shape.length = parse_int(val);
+//         free(val);
+//     }
+//     config->input_shape.batch_size = 1;
     
-    val = find_value(json, "output_channels");
-    if (val) {
-        config->output_shape.channels = parse_int(val);
-        free(val);
-    }
+//     val = find_value(json, "output_channels");
+//     if (val) {
+//         config->output_shape.channels = parse_int(val);
+//         free(val);
+//     }
     
-    val = find_value(json, "output_length");
-    if (val) {
-        config->output_shape.length = parse_int(val);
-        free(val);
-    }
-    config->output_shape.batch_size = 1;
+//     val = find_value(json, "output_length");
+//     if (val) {
+//         config->output_shape.length = parse_int(val);
+//         free(val);
+//     }
+//     config->output_shape.batch_size = 1;
     
-    free(json);
+//     free(json);
     
-    log_info("Config loaded: Device %d, Role %d, %d layers, %d upstream, %d downstream",
-             config->device_id, config->role, config->num_layers,
-             config->num_upstream, config->num_downstream);
+//     log_info("Config loaded: Device %d, Role %d, %d layers, %d upstream, %d downstream",
+//              config->device_id, config->role, config->num_layers,
+//              config->num_upstream, config->num_downstream);
     
-    return config;
-}
+//     return config;
+// }
 
-void free_device_config(device_json_config_t* config) {
-    if (config) {
-        free(config);
-    }
-}
+// void free_device_config(device_json_config_t* config) {
+//     if (config) {
+//         free(config);
+//     }
+// }
 
-void print_device_config(const device_json_config_t* config) {
-    if (!config) return;
+// void print_device_config(const device_json_config_t* config) {
+//     if (!config) return;
     
-    printf("Device Configuration:\n");
-    printf("  ID: %d\n", config->device_id);
-    printf("  Role: %d\n", config->role);
-    printf("  Layers: %d\n", config->num_layers);
-    printf("  Upstream connections: %d\n", config->num_upstream);
-    printf("  Downstream connections: %d\n", config->num_downstream);
-    printf("  Backward connections: %d\n", config->num_backward);
-}
+//     printf("Device Configuration:\n");
+//     printf("  ID: %d\n", config->device_id);
+//     printf("  Role: %d\n", config->role);
+//     printf("  Layers: %d\n", config->num_layers);
+//     printf("  Upstream connections: %d\n", config->num_upstream);
+//     printf("  Downstream connections: %d\n", config->num_downstream);
+//     printf("  Backward connections: %d\n", config->num_backward);
+// }
 
 // Model configuration functions
 model_config_t* load_model_config(const char* config_file) {
@@ -427,7 +427,11 @@ model_config_t* load_model_config(const char* config_file) {
         config->epochs = atoi(value);
         free(value);
     }
-    
+    value = find_value(content, "learning_rate");
+    if (value) {
+        config->learning_rate = atof(value);
+        free(value);
+    }
     value = find_value(content, "num_classes");
     if (value) {
         config->num_classes = atoi(value);
@@ -512,13 +516,20 @@ model_config_t* load_model_config(const char* config_file) {
                     layer->out_features = atoi(val);
                     free(val);
                 }
-                
+                if ((val = find_value(layer_pos, "input_length"))) {
+                    layer->input_length  = atoi(val);
+                    free(val);
+                }
+                if ((val = find_value(layer_pos, "output_length"))) {
+                    layer->output_length = atoi(val);
+                    free(val);
+                }
                 layer_count++;
                 
                 // Find next layer  
                 layer_pos = strstr(layer_pos + 1, "\"id\"");
             }
-            
+            log_info("Parsed %d layers from config", layer_count);
             config->num_layers = layer_count;
         }
     }

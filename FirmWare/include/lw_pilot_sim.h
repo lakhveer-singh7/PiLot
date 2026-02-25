@@ -16,12 +16,11 @@ typedef struct device_config device_config_t;
 typedef struct message message_t;
 
 // Global constants
-#define MAX_DEVICES 8
+#define MAX_DEVICES 15
 #define MAX_CLASSES 32
 #define MAX_CHANNELS 128
 #define MAX_SEQUENCE_LENGTH 1000
-#define MEMORY_LIMIT_BYTES (256 * 1024)  // 256KB per device
-#define BASE_PORT 8000
+#define MEMORY_LIMIT_BYTES (1024 * 1024)  // 1MB per device (for ECG5000 dataset)
 
 // Device roles
 typedef enum {
