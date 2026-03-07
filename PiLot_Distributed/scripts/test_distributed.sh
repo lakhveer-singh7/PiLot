@@ -5,7 +5,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEVICE_BIN="$SCRIPT_DIR/build/device"
-MODEL_CONFIG="$SCRIPT_DIR/configs/model_config_cricket_x.json"
+MODEL_CONFIG="$SCRIPT_DIR/configs/model_config.json"
 DATASET="Cricket_X"
 LOG_DIR="$SCRIPT_DIR/logs"
 

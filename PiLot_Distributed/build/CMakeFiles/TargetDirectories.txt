@@ -1,3 +1,0 @@
-/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Distributed/build/CMakeFiles/device.dir
-/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Distributed/build/CMakeFiles/edit_cache.dir
-/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Distributed/build/CMakeFiles/rebuild_cache.dir
