@@ -7,7 +7,7 @@ set(CMAKE_DEPENDS_GENERATOR "Unix Makefiles")
 # The top level Makefile was generated from the following files:
 set(CMAKE_MAKEFILE_DEPENDS
   "CMakeCache.txt"
-  "/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/CMakeLists.txt"
+  "/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/CMakeLists.txt"
   "CMakeFiles/3.31.6/CMakeCCompiler.cmake"
   "CMakeFiles/3.31.6/CMakeSystem.cmake"
   "/usr/share/cmake-3.31/Modules/CMakeCInformation.cmake"

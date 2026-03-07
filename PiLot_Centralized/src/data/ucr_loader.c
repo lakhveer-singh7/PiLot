@@ -105,6 +105,7 @@ dataset_t* load_ucr_dataset(const char* filename) {
         static int seeded = 0;
         if (!seeded) { srand((unsigned)time(NULL)); seeded = 1; }
         float* tmp = (float*)malloc((size_t)sample_length * sizeof(float));
+        if (tmp) {
         for (int i = idx - 1; i > 0; i--) {
             int j = rand() % (i + 1);
             memcpy(tmp, &ds->data[i * sample_length],
@@ -119,6 +120,7 @@ dataset_t* load_ucr_dataset(const char* filename) {
             ds->labels[j] = tl;
         }
         free(tmp);
+        }
     }
 
     /* Count unique classes */

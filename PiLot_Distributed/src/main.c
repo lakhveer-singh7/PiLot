@@ -12,7 +12,8 @@ int run_worker_device(int device_id);
 int run_tail_device(int device_id, int num_classes);
 
 // ── Runtime constraint globals (declared extern in lw_pilot_sim.h) ──
-size_t MEMORY_LIMIT_BYTES = DEFAULT_MEMORY_LIMIT_BYTES;   // 256 KB default
+size_t MEMORY_LIMIT_BYTES = DEFAULT_MEMORY_LIMIT_BYTES;   // 256 KB RAM default
+size_t FLASH_MEMORY_BYTES = DEFAULT_FLASH_MEMORY_BYTES;    // 1 MB flash default
 int g_proc_constraint = 0;                                 // -p flag
 
 // ── Processing delay simulation ──
@@ -33,6 +34,7 @@ static char g_dataset_name[256] = "Cricket_X";
 static int g_num_classes = 12;
 static int g_debug = 0;
 static char g_config_file[512] = "";
+static char g_log_dir[512] = "logs";   // Default log directory
 model_config_t* g_model_config = NULL;  // Global model configuration
 
 // Runtime parameters (override config) - exported for device implementations
@@ -130,6 +132,8 @@ int parse_arguments(int argc, char* argv[]) {
             g_proc_constraint = 1;
         } else if (strncmp(argv[i], "--mem-limit=", 12) == 0) {
             MEMORY_LIMIT_BYTES = (size_t)atol(argv[i] + 12);
+        } else if (strncmp(argv[i], "--log-dir=", 10) == 0) {
+            strncpy(g_log_dir, argv[i] + 10, sizeof(g_log_dir) - 1);
         } else if (strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
             exit(0);
@@ -152,9 +156,30 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Initialize per-device log file
+    {
+        // Create log directory
+        char mkdir_cmd[600];
+        snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p %s", g_log_dir);
+        system(mkdir_cmd);
+
+        // Build log filename: logs/device_<ID>_<role>.log
+        const char* role_str = (g_device_role == DEVICE_HEAD) ? "head" :
+                               (g_device_role == DEVICE_WORKER) ? "worker" : "tail";
+        char log_path[600];
+        if (g_device_role == DEVICE_WORKER) {
+            snprintf(log_path, sizeof(log_path), "%s/device_%02d_%s_L%d_W%d.log",
+                     g_log_dir, g_device_id, role_str, g_layer_id, g_worker_id);
+        } else {
+            snprintf(log_path, sizeof(log_path), "%s/device_%02d_%s.log",
+                     g_log_dir, g_device_id, role_str);
+        }
+        log_init(log_path);
+    }
+
     // Load model configuration (all devices need this)
     log_info("Loading model configuration...");
-    const char *cfg_path = (g_config_file[0] != '\0') ? g_config_file : "configs/model_config_ecg5000.json";
+    const char *cfg_path = (g_config_file[0] != '\0') ? g_config_file : "configs/model_config.json";
     g_model_config = load_model_config(cfg_path);
 
     if (!g_model_config) {
@@ -167,7 +192,11 @@ int main(int argc, char* argv[]) {
     if (g_model_config->memory_limit_bytes > 0 && MEMORY_LIMIT_BYTES == DEFAULT_MEMORY_LIMIT_BYTES) {
         MEMORY_LIMIT_BYTES = (size_t)g_model_config->memory_limit_bytes;
     }
-    log_info("Memory limit: %zu bytes (%zu KB) per device", MEMORY_LIMIT_BYTES, MEMORY_LIMIT_BYTES / 1024);
+    if (g_model_config->flash_memory_bytes > 0 && FLASH_MEMORY_BYTES == DEFAULT_FLASH_MEMORY_BYTES) {
+        FLASH_MEMORY_BYTES = (size_t)g_model_config->flash_memory_bytes;
+    }
+    log_info("RAM limit: %zu bytes (%zu KB) per device", MEMORY_LIMIT_BYTES, MEMORY_LIMIT_BYTES / 1024);
+    log_info("Flash memory: %zu bytes (%zu KB) per device", FLASH_MEMORY_BYTES, FLASH_MEMORY_BYTES / 1024);
     log_info("Processing constraint: %s", g_proc_constraint ? "ENABLED (64 MHz)" : "disabled");
 
     // Use dataset name from config if not overridden via CLI
@@ -177,9 +206,7 @@ int main(int argc, char* argv[]) {
         log_info("Using dataset from config: %s", g_dataset_name);
     }
    
-    if (g_debug) {
-        set_log_level_debug();
-    }
+    if (g_debug) set_log_level_debug();
     
     // Check required parameters for shared memory
     if (g_device_role == DEVICE_WORKER) {
@@ -196,18 +223,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    log_info("Device parameters: ID=%d, Role=%d, Layer=%d, Worker=%d/%d",
-             g_device_id, g_device_role, g_layer_id, g_worker_id, g_num_workers);
-
+    log_info("Device parameters: ID=%d, Role=%d, Layer=%d, Worker=%d/%d", g_device_id, g_device_role, g_layer_id, g_worker_id, g_num_workers);
     log_info("Starting LayerWise Pilot Simulation (Shared Memory Communication)");
-    
-    log_info("Device ID: %d, Role: %s", g_device_id,
-             g_device_role == DEVICE_HEAD ? "HEAD" :
-             g_device_role == DEVICE_WORKER ? "WORKER" : "TAIL");
-    
-    if (g_debug) {
-        log_info("Debug mode enabled");
-    }
+    log_info("Device ID: %d, Role: %s", g_device_id, g_device_role == DEVICE_HEAD ? "HEAD" : g_device_role == DEVICE_WORKER ? "WORKER" : "TAIL");
+    if (g_debug) log_info("Debug mode enabled");
     
     // Run device based on role
     int result = 0;
@@ -233,9 +252,7 @@ int main(int argc, char* argv[]) {
         log_error("Device %d failed with result %d", g_device_id, result);
     }
     
-    if (g_debug) {
-        print_memory_usage();
-    }
+    if (g_debug) print_memory_usage();
     
 
     log_cleanup();

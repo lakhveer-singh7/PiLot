@@ -4,7 +4,7 @@
 # compile C with /usr/bin/cc
 C_DEFINES = 
 
-C_INCLUDES = -I/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/include
+C_INCLUDES = -I/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/include
 
 C_FLAGS = -g -O0 -Wall -Wextra -Wpedantic -std=gnu11
 

@@ -30,13 +30,10 @@ set(SOURCES
     src/nn/activations.c
     src/nn/optimizers.c
     src/comm/ipc_tensor.c
-    src/comm/shm_protocol.c
     src/data/ucr_loader.c
     src/data/tensor.c
-    src/threading/worker_threads.c
     src/config/config_loader.c
     src/utils/logging.c
-    src/shared_memory.c
 )
 
 # Create executable
@@ -49,7 +46,7 @@ target_link_libraries(device ${PLATFORM_LIBS})
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(device PRIVATE -g -O0 -Wall -Wextra)
 else()
-    target_compile_options(device PRIVATE -O3 -DNDEBUG)
+    target_compile_options(device PRIVATE -O3 -Wall -Wextra -DNDEBUG)
 endif()
 
 # Copy test data (commented out - using actual UCR dataset instead)

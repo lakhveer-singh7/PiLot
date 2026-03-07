@@ -20,10 +20,12 @@ typedef struct message message_t;
 #define MAX_CLASSES 32
 #define MAX_CHANNELS 128
 #define MAX_SEQUENCE_LENGTH 1000
-#define DEFAULT_MEMORY_LIMIT_BYTES (256 * 1024)  // 256KB per device (nRF52840 constraint)
+#define DEFAULT_MEMORY_LIMIT_BYTES (256 * 1024)  // 256KB RAM per device (nRF52840 SRAM)
+#define DEFAULT_FLASH_MEMORY_BYTES (1024 * 1024) // 1MB flash per device (nRF52840 flash)
 
-// Runtime memory limit (can be overridden via --mem-limit=N or config JSON)
-extern size_t MEMORY_LIMIT_BYTES;
+// Runtime memory limits (can be overridden via CLI or config JSON)
+extern size_t MEMORY_LIMIT_BYTES;   // RAM budget: weights, activations, gradients
+extern size_t FLASH_MEMORY_BYTES;   // Flash budget: dataset storage (read-only)
 
 // Processing constraint: simulate 64 MHz Cortex-M4 clock
 #define PROC_CLOCK_HZ  64000000   // 64 MHz

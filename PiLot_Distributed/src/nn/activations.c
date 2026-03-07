@@ -30,11 +30,9 @@ void dropout_forward(const tensor_t* input, tensor_t* output, float* mask,
             }
         }
     } else {
-        // During testing: identity (no dropout)
-        for (int i = 0; i < total; i++) {
-            mask[i] = 1.0f;
+        // During testing: identity (no dropout, skip mask writes)
+        for (int i = 0; i < total; i++)
             output->data[i] = input->data[i];
-        }
     }
 }
 
@@ -88,6 +86,10 @@ void relu_backward(const tensor_t* grad_output, const tensor_t* input, tensor_t*
 void softmax_forward(tensor_t* input, tensor_t* output) {
     if (!input || !output || !input->data || !output->data) {
         log_error("Invalid tensors for softmax forward");
+        return;
+    }
+    if (input->length != 1) {
+        log_error("softmax expects length==1, got %d", input->length);
         return;
     }
     
@@ -152,6 +154,7 @@ void cross_entropy_backward(const tensor_t* softmax_output,const int* true_label
         float* grad = grad_logits->data + b * num_classes;
         float* prob = softmax_output->data + b * num_classes;
         int label = true_labels[b];
+        if (label < 0 || label >= num_classes) continue;
 
         for (int j = 0; j < num_classes; j++) {
             grad[j] = prob[j];

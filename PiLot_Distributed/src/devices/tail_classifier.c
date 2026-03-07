@@ -4,6 +4,10 @@
 #include "ipc_tensor.h"
 #include <time.h>
 #include <sys/resource.h>
+#include <signal.h>
+
+static volatile sig_atomic_t g_tail_shutdown = 0;
+static void tail_shutdown_handler(int sig) { (void)sig; g_tail_shutdown = 1; }
 
 static long get_rss_kb(void) {
     struct rusage r;
@@ -28,7 +32,10 @@ static int argmax(const float* x, int n) {
 
 int run_tail_device(int device_id, int num_classes) {
     log_info("Starting Tail Device %d (Classifier) with %d classes", device_id, num_classes);
-    
+    signal(SIGINT, tail_shutdown_handler);
+    signal(SIGTERM, tail_shutdown_handler);
+    srand((unsigned)(time(NULL) ^ ((unsigned)device_id * 2654435761u)));
+
     if (!g_model_config) {
         log_error("Model configuration is required for tail device");
         return -1;
@@ -85,6 +92,13 @@ int run_tail_device(int device_id, int num_classes) {
     // FC config
     int in_features = g_model_config->layers[last_layer+1].in_features;
     int out_features = g_model_config->layers[last_layer+1].out_features;
+
+    /* Validate FC in_features matches dual-pooled output */
+    if (in_features != in_channels * 2) {
+        log_error("FC in_features (%d) != dual-pooled channels (%d)", in_features, in_channels * 2);
+        return -1;
+    }
+
     fc_config_t* fc_config = create_fc_config(in_features, out_features);
     log_info("Tail FC layer config: in_features=%d, out_features=%d", in_features, out_features);
     // Setup pooling and fully connected layer
@@ -202,9 +216,12 @@ int run_tail_device(int device_id, int num_classes) {
     int total = 0;
     float test_loss_sum = 0.0f;
     int round = 1;
-    while (1) {
+    while (!g_tail_shutdown) {
         log_info("Tail: Processing sample %d", round);
-        sem_wait(fwd_sem);
+        if (sem_wait(fwd_sem) < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
         
         int is_testing_now = shm_tensor->is_testing;
         
@@ -231,11 +248,15 @@ int run_tail_device(int device_id, int num_classes) {
         int label = shm_tensor->label;  // from shared memory
         float loss = cross_entropy_loss(&prob_tensor, &label, 1);
         log_info("Loss = %f", loss);
-        log_info("prob[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
-                 prob_tensor.data[0], prob_tensor.data[1], prob_tensor.data[2],
-                 prob_tensor.data[3], prob_tensor.data[4], prob_tensor.data[5],
-                 prob_tensor.data[6], prob_tensor.data[7], prob_tensor.data[8],
-                 prob_tensor.data[9]);
+        if (num_classes >= 10) {
+            log_info("prob[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
+                     prob_tensor.data[0], prob_tensor.data[1], prob_tensor.data[2],
+                     prob_tensor.data[3], prob_tensor.data[4], prob_tensor.data[5],
+                     prob_tensor.data[6], prob_tensor.data[7], prob_tensor.data[8],
+                     prob_tensor.data[9]);
+        } else {
+            log_info("prob (first %d classes): %.4f ...", num_classes, prob_tensor.data[0]);
+        }
         
         // Backward pass
         int is_testing = shm_tensor->is_testing;
@@ -286,6 +307,8 @@ int run_tail_device(int device_id, int num_classes) {
                 log_info("[EARLY_STOP] Restored best weights from epoch %d (Test Acc=%.2f%%)",
                          best_epoch, best_test_acc);
                 log_info("[EARLY_STOP] Training will continue in eval mode (no weight updates)");
+                /* NOTE: Only FC weights are checkpointed by early stopping. Conv layer weights
+                   reside on worker devices and would require cross-device signaling to save/restore. */
             }
 
             // Reset accuracy metrics for next epoch
@@ -321,6 +344,8 @@ int run_tail_device(int device_id, int num_classes) {
                 // Adam optimizer with cosine annealing LR
                 float base_lr = g_model_config->learning_rate;
                 float lr = lr_cosine_annealing(base_lr, current_epoch, 60, 1e-5f);
+                clip_gradients(grad_weights, num_weights, 5.0f);
+                clip_gradients(grad_bias, num_biases, 5.0f);
                 adam_timestep++;
                 adam_update(fc_config->weights, grad_weights, m_weights, v_weights, num_weights, lr, adam_beta1, adam_beta2, adam_eps, adam_timestep, weight_decay);
                 adam_update_bias(fc_config->bias, grad_bias, m_bias, v_bias, num_biases, lr, adam_beta1, adam_beta2, adam_eps, adam_timestep);
@@ -331,16 +356,20 @@ int run_tail_device(int device_id, int num_classes) {
                 dropout_backward(&grad_pooled, dropout_mask, &grad_dropout);
                 dual_pooling1d_backward(&grad_dropout, &input_tensor, &grad_input);
             }
-            log_info("weights[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
-                     fc_config->weights[0], fc_config->weights[1], fc_config->weights[2],
-                     fc_config->weights[3], fc_config->weights[4], fc_config->weights[5],
-                     fc_config->weights[6], fc_config->weights[7], fc_config->weights[8],
-                     fc_config->weights[9]);
-            log_info("bias[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
-                     fc_config->bias[0], fc_config->bias[1], fc_config->bias[2],
-                     fc_config->bias[3], fc_config->bias[4], fc_config->bias[5],
-                     fc_config->bias[6], fc_config->bias[7], fc_config->bias[8],
-                     fc_config->bias[9]);
+            if (num_weights >= 10) {
+                log_info("weights[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
+                         fc_config->weights[0], fc_config->weights[1], fc_config->weights[2],
+                         fc_config->weights[3], fc_config->weights[4], fc_config->weights[5],
+                         fc_config->weights[6], fc_config->weights[7], fc_config->weights[8],
+                         fc_config->weights[9]);
+            }
+            if (num_biases >= 10) {
+                log_info("bias[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
+                         fc_config->bias[0], fc_config->bias[1], fc_config->bias[2],
+                         fc_config->bias[3], fc_config->bias[4], fc_config->bias[5],
+                         fc_config->bias[6], fc_config->bias[7], fc_config->bias[8],
+                         fc_config->bias[9]);
+            }
            
             memcpy(grad_buffer, grad_input.data, sizeof(float) * in_channels * input_length);
 
@@ -371,27 +400,27 @@ int run_tail_device(int device_id, int num_classes) {
 
     
     // Cleanup
-    free(pooled_tensor.data);
-    free(output_tensor.data);
-    free(prob_tensor.data);
-    free(grad_output.data);
-    free(grad_pooled.data);
-    free(grad_input.data);
-    free(grad_weights);
-    free(grad_bias);
-    free(m_weights);
-    free(v_weights);
-    free(m_bias);
-    free(v_bias);
-    free(dropout_mask);
-    free(dropout_out.data);
-    free(grad_dropout.data);
-    free(best_fc_weights);
-    free(best_fc_bias);
+    sim_free_tracked(pooled_tensor.data, sizeof(float) * in_channels * 2);
+    sim_free_tracked(output_tensor.data, sizeof(float) * out_features);
+    sim_free_tracked(prob_tensor.data, sizeof(float) * num_classes);
+    sim_free_tracked(grad_output.data, sizeof(float) * out_features);
+    sim_free_tracked(grad_pooled.data, sizeof(float) * in_channels * 2);
+    sim_free_tracked(grad_input.data, sizeof(float) * in_channels * input_length);
+    sim_free_tracked(grad_weights, fc_config->weights_size);
+    sim_free_tracked(grad_bias, fc_config->bias_size);
+    sim_free_tracked(m_weights, sizeof(float) * num_weights);
+    sim_free_tracked(v_weights, sizeof(float) * num_weights);
+    sim_free_tracked(m_bias, sizeof(float) * num_biases);
+    sim_free_tracked(v_bias, sizeof(float) * num_biases);
+    sim_free_tracked(dropout_mask, sizeof(float) * in_channels * 2);
+    sim_free_tracked(dropout_out.data, sizeof(float) * in_channels * 2);
+    sim_free_tracked(grad_dropout.data, sizeof(float) * in_channels * 2);
+    sim_free_tracked(best_fc_weights, fc_config->weights_size);
+    sim_free_tracked(best_fc_bias, fc_config->bias_size);
     ipc_sem_close(fwd_sem);
     ipc_sem_close(bwd_sem);
     ipc_tensor_close(shm_ptr, shm_size);
-    sim_free(fc_config);
+    free_fc_config(fc_config);
     shm_unlink(shm_name);
     sem_unlink(bwd_sem_name);
     sem_unlink(fwd_sem_name);

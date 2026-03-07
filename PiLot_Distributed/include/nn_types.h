@@ -96,6 +96,7 @@ void adam_update(float* weights, const float* grad_weights, float* m, float* v,
 void adam_update_bias(float* bias, const float* grad_bias, float* m, float* v,
                       int size, float learning_rate, float beta1, float beta2,
                       float epsilon, int timestep);
+void clip_gradients(float* grad, int size, float max_norm);
 
 fc_config_t* create_fc_config(int in_features, int out_features);
 void free_fc_config(fc_config_t* config);

@@ -165,10 +165,9 @@ conv1d_config_t* create_conv1d_config(int in_channels, int out_channels, int ker
         return NULL;
     }
     
-    // Initialize weights with Xavier initialization
-    float fan_in = in_channels * kernel_size;
-    float fan_out = out_channels * kernel_size;
-    float scale = sqrtf(2.0f / (fan_in + fan_out));
+    // Initialize weights with Kaiming (He) initialization for ReLU
+    float fan_in = (float)(in_channels * kernel_size);
+    float scale = sqrtf(2.0f / fan_in);
     
     for (int i = 0; i < num_weights; i++) {
         config->weights[i] = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * scale;

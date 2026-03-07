@@ -77,7 +77,8 @@ float lr_cosine_annealing(float base_lr, int epoch, int T_max, float eta_min) {
     int effective_epoch = epoch - 3;
     int cycle_len = T_max;
     int cycle_pos = effective_epoch % cycle_len;
-    float cosine_val = cosf((float)cycle_pos / (float)cycle_len * 3.14159265f);
+    int divisor = (cycle_len > 1) ? (cycle_len - 1) : 1;
+    float cosine_val = cosf((float)cycle_pos / (float)divisor * 3.14159265f);
     return eta_min + 0.5f * (base_lr - eta_min) * (1.0f + cosine_val);
 }
 
@@ -97,12 +98,11 @@ void adam_update(float* weights, const float* grad_weights, float* m, float* v,
     if (bc2 < 1e-10f) bc2 = 1e-10f;
 
     for (int i = 0; i < size; i++) {
-        float g = grad_weights[i] + weight_decay * weights[i]; // AdamW-style decoupled weight decay
-        m[i] = beta1 * m[i] + (1.0f - beta1) * g;
-        v[i] = beta2 * v[i] + (1.0f - beta2) * g * g;
+        m[i] = beta1 * m[i] + (1.0f - beta1) * grad_weights[i];
+        v[i] = beta2 * v[i] + (1.0f - beta2) * grad_weights[i] * grad_weights[i];
         float m_hat = m[i] / bc1;
         float v_hat = v[i] / bc2;
-        weights[i] -= learning_rate * m_hat / (sqrtf(v_hat) + epsilon);
+        weights[i] -= learning_rate * (m_hat / (sqrtf(v_hat) + epsilon) + weight_decay * weights[i]);  /* true AdamW */
     }
 }
 
@@ -121,5 +121,19 @@ void adam_update_bias(float* bias, const float* grad_bias, float* m, float* v,
         float m_hat = m[i] / bc1;
         float v_hat = v[i] / bc2;
         bias[i] -= learning_rate * m_hat / (sqrtf(v_hat) + epsilon);
+    }
+}
+
+/* ================================================================== */
+/*  Gradient Clipping (L2-norm based)                                  */
+/* ================================================================== */
+void clip_gradients(float* grad, int size, float max_norm) {
+    if (!grad || size <= 0 || max_norm <= 0.0f) return;
+    float norm_sq = 0.0f;
+    for (int i = 0; i < size; i++) norm_sq += grad[i] * grad[i];
+    float norm = sqrtf(norm_sq);
+    if (norm > max_norm) {
+        float scale = max_norm / norm;
+        for (int i = 0; i < size; i++) grad[i] *= scale;
     }
 }

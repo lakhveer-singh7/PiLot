@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized
+CMAKE_SOURCE_DIR = /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build
+CMAKE_BINARY_DIR = /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build
 
 # Include any dependencies generated for this target.
 include CMakeFiles/pilot_centralized.dir/depend.make
@@ -73,158 +73,158 @@ CMakeFiles/pilot_centralized.dir/codegen:
 .PHONY : CMakeFiles/pilot_centralized.dir/codegen
 
 CMakeFiles/pilot_centralized.dir/src/main.c.o: CMakeFiles/pilot_centralized.dir/flags.make
-CMakeFiles/pilot_centralized.dir/src/main.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/main.c
+CMakeFiles/pilot_centralized.dir/src/main.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/main.c
 CMakeFiles/pilot_centralized.dir/src/main.c.o: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building C object CMakeFiles/pilot_centralized.dir/src/main.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/main.c.o -MF CMakeFiles/pilot_centralized.dir/src/main.c.o.d -o CMakeFiles/pilot_centralized.dir/src/main.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/main.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building C object CMakeFiles/pilot_centralized.dir/src/main.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/main.c.o -MF CMakeFiles/pilot_centralized.dir/src/main.c.o.d -o CMakeFiles/pilot_centralized.dir/src/main.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/main.c
 
 CMakeFiles/pilot_centralized.dir/src/main.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/pilot_centralized.dir/src/main.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/main.c > CMakeFiles/pilot_centralized.dir/src/main.c.i
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/main.c > CMakeFiles/pilot_centralized.dir/src/main.c.i
 
 CMakeFiles/pilot_centralized.dir/src/main.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/pilot_centralized.dir/src/main.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/main.c -o CMakeFiles/pilot_centralized.dir/src/main.c.s
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/main.c -o CMakeFiles/pilot_centralized.dir/src/main.c.s
 
 CMakeFiles/pilot_centralized.dir/src/logging.c.o: CMakeFiles/pilot_centralized.dir/flags.make
-CMakeFiles/pilot_centralized.dir/src/logging.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/logging.c
+CMakeFiles/pilot_centralized.dir/src/logging.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/logging.c
 CMakeFiles/pilot_centralized.dir/src/logging.c.o: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building C object CMakeFiles/pilot_centralized.dir/src/logging.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/logging.c.o -MF CMakeFiles/pilot_centralized.dir/src/logging.c.o.d -o CMakeFiles/pilot_centralized.dir/src/logging.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/logging.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building C object CMakeFiles/pilot_centralized.dir/src/logging.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/logging.c.o -MF CMakeFiles/pilot_centralized.dir/src/logging.c.o.d -o CMakeFiles/pilot_centralized.dir/src/logging.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/logging.c
 
 CMakeFiles/pilot_centralized.dir/src/logging.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/pilot_centralized.dir/src/logging.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/logging.c > CMakeFiles/pilot_centralized.dir/src/logging.c.i
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/logging.c > CMakeFiles/pilot_centralized.dir/src/logging.c.i
 
 CMakeFiles/pilot_centralized.dir/src/logging.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/pilot_centralized.dir/src/logging.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/logging.c -o CMakeFiles/pilot_centralized.dir/src/logging.c.s
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/logging.c -o CMakeFiles/pilot_centralized.dir/src/logging.c.s
 
 CMakeFiles/pilot_centralized.dir/src/augmentation.c.o: CMakeFiles/pilot_centralized.dir/flags.make
-CMakeFiles/pilot_centralized.dir/src/augmentation.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/augmentation.c
+CMakeFiles/pilot_centralized.dir/src/augmentation.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/augmentation.c
 CMakeFiles/pilot_centralized.dir/src/augmentation.c.o: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building C object CMakeFiles/pilot_centralized.dir/src/augmentation.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/augmentation.c.o -MF CMakeFiles/pilot_centralized.dir/src/augmentation.c.o.d -o CMakeFiles/pilot_centralized.dir/src/augmentation.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/augmentation.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building C object CMakeFiles/pilot_centralized.dir/src/augmentation.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/augmentation.c.o -MF CMakeFiles/pilot_centralized.dir/src/augmentation.c.o.d -o CMakeFiles/pilot_centralized.dir/src/augmentation.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/augmentation.c
 
 CMakeFiles/pilot_centralized.dir/src/augmentation.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/pilot_centralized.dir/src/augmentation.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/augmentation.c > CMakeFiles/pilot_centralized.dir/src/augmentation.c.i
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/augmentation.c > CMakeFiles/pilot_centralized.dir/src/augmentation.c.i
 
 CMakeFiles/pilot_centralized.dir/src/augmentation.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/pilot_centralized.dir/src/augmentation.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/augmentation.c -o CMakeFiles/pilot_centralized.dir/src/augmentation.c.s
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/augmentation.c -o CMakeFiles/pilot_centralized.dir/src/augmentation.c.s
 
 CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o: CMakeFiles/pilot_centralized.dir/flags.make
-CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/data/tensor.c
+CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/data/tensor.c
 CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building C object CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o -MF CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o.d -o CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/data/tensor.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building C object CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o -MF CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o.d -o CMakeFiles/pilot_centralized.dir/src/data/tensor.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/data/tensor.c
 
 CMakeFiles/pilot_centralized.dir/src/data/tensor.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/pilot_centralized.dir/src/data/tensor.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/data/tensor.c > CMakeFiles/pilot_centralized.dir/src/data/tensor.c.i
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/data/tensor.c > CMakeFiles/pilot_centralized.dir/src/data/tensor.c.i
 
 CMakeFiles/pilot_centralized.dir/src/data/tensor.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/pilot_centralized.dir/src/data/tensor.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/data/tensor.c -o CMakeFiles/pilot_centralized.dir/src/data/tensor.c.s
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/data/tensor.c -o CMakeFiles/pilot_centralized.dir/src/data/tensor.c.s
 
 CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o: CMakeFiles/pilot_centralized.dir/flags.make
-CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/data/ucr_loader.c
+CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/data/ucr_loader.c
 CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building C object CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o -MF CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o.d -o CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/data/ucr_loader.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building C object CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o -MF CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o.d -o CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/data/ucr_loader.c
 
 CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/data/ucr_loader.c > CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.i
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/data/ucr_loader.c > CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.i
 
 CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/data/ucr_loader.c -o CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.s
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/data/ucr_loader.c -o CMakeFiles/pilot_centralized.dir/src/data/ucr_loader.c.s
 
 CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o: CMakeFiles/pilot_centralized.dir/flags.make
-CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/config/config_loader.c
+CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/config/config_loader.c
 CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building C object CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o -MF CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o.d -o CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/config/config_loader.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building C object CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o -MF CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o.d -o CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/config/config_loader.c
 
 CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/config/config_loader.c > CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.i
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/config/config_loader.c > CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.i
 
 CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/config/config_loader.c -o CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.s
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/config/config_loader.c -o CMakeFiles/pilot_centralized.dir/src/config/config_loader.c.s
 
 CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o: CMakeFiles/pilot_centralized.dir/flags.make
-CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/conv1d.c
+CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/conv1d.c
 CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building C object CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o -MF CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o.d -o CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/conv1d.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building C object CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o -MF CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o.d -o CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/conv1d.c
 
 CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/conv1d.c > CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.i
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/conv1d.c > CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.i
 
 CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/conv1d.c -o CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.s
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/conv1d.c -o CMakeFiles/pilot_centralized.dir/src/nn/conv1d.c.s
 
 CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o: CMakeFiles/pilot_centralized.dir/flags.make
-CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/pooling.c
+CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/pooling.c
 CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building C object CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o -MF CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o.d -o CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/pooling.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building C object CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o -MF CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o.d -o CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/pooling.c
 
 CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/pooling.c > CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.i
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/pooling.c > CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.i
 
 CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/pooling.c -o CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.s
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/pooling.c -o CMakeFiles/pilot_centralized.dir/src/nn/pooling.c.s
 
 CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o: CMakeFiles/pilot_centralized.dir/flags.make
-CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/fully_connected.c
+CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/fully_connected.c
 CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building C object CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o -MF CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o.d -o CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/fully_connected.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building C object CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o -MF CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o.d -o CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/fully_connected.c
 
 CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/fully_connected.c > CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.i
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/fully_connected.c > CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.i
 
 CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/fully_connected.c -o CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.s
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/fully_connected.c -o CMakeFiles/pilot_centralized.dir/src/nn/fully_connected.c.s
 
 CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o: CMakeFiles/pilot_centralized.dir/flags.make
-CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/activations.c
+CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/activations.c
 CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building C object CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o -MF CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o.d -o CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/activations.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building C object CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o -MF CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o.d -o CMakeFiles/pilot_centralized.dir/src/nn/activations.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/activations.c
 
 CMakeFiles/pilot_centralized.dir/src/nn/activations.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/pilot_centralized.dir/src/nn/activations.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/activations.c > CMakeFiles/pilot_centralized.dir/src/nn/activations.c.i
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/activations.c > CMakeFiles/pilot_centralized.dir/src/nn/activations.c.i
 
 CMakeFiles/pilot_centralized.dir/src/nn/activations.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/pilot_centralized.dir/src/nn/activations.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/activations.c -o CMakeFiles/pilot_centralized.dir/src/nn/activations.c.s
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/activations.c -o CMakeFiles/pilot_centralized.dir/src/nn/activations.c.s
 
 CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o: CMakeFiles/pilot_centralized.dir/flags.make
-CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/optimizers.c
+CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o: /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/optimizers.c
 CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building C object CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o -MF CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o.d -o CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/optimizers.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building C object CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o -MF CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o.d -o CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o -c /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/optimizers.c
 
 CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.i"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/optimizers.c > CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.i
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/optimizers.c > CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.i
 
 CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.s"
-	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/optimizers.c -o CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.s
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/optimizers.c -o CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.s
 
 # Object files for target pilot_centralized
 pilot_centralized_OBJECTS = \
@@ -257,7 +257,7 @@ pilot_centralized: CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o
 pilot_centralized: CMakeFiles/pilot_centralized.dir/build.make
 pilot_centralized: CMakeFiles/pilot_centralized.dir/compiler_depend.ts
 pilot_centralized: CMakeFiles/pilot_centralized.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Linking C executable pilot_centralized"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Linking C executable pilot_centralized"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/pilot_centralized.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -269,6 +269,6 @@ CMakeFiles/pilot_centralized.dir/clean:
 .PHONY : CMakeFiles/pilot_centralized.dir/clean
 
 CMakeFiles/pilot_centralized.dir/depend:
-	cd /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles/pilot_centralized.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles/pilot_centralized.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : CMakeFiles/pilot_centralized.dir/depend
 

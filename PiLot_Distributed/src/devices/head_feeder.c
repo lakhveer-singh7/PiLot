@@ -107,7 +107,26 @@ static void apply_augmentation(float* data, int length) {
         augment_time_shift(data, length, 5);
 }
 
+/* Fisher-Yates shuffle for dataset (in-place) */
+static void shuffle_dataset(dataset_t* ds) {
+    int n = ds->num_samples;
+    int len = ds->sample_length;
+    float* tmp = (float*)malloc((size_t)len * sizeof(float));
+    if (!tmp) return;
+    for (int i = n - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        memcpy(tmp, &ds->data[i * len], (size_t)len * sizeof(float));
+        memcpy(&ds->data[i * len], &ds->data[j * len], (size_t)len * sizeof(float));
+        memcpy(&ds->data[j * len], tmp, (size_t)len * sizeof(float));
+        int tl = ds->labels[i];
+        ds->labels[i] = ds->labels[j];
+        ds->labels[j] = tl;
+    }
+    free(tmp);
+}
+
  int run_head_device(int device_id, const char* dataset_name) {
+    srand((unsigned)(time(NULL) ^ ((unsigned)device_id * 2654435761u)));
     log_info("Starting Head Device %d with dataset: %s", device_id, dataset_name);
     int num_layer0_workers = 1;
     int output_channels = 16;  // Default output channels for layer 0
@@ -181,12 +200,20 @@ static void apply_augmentation(float* data, int length) {
     log_info("Dataset loaded: %d samples, %d time points, %d classes",
              train_dataset->num_samples, train_dataset->sample_length, train_dataset->num_classes);
     
-    // Check memory constraint
-    size_t dataset_memory = train_dataset->num_samples * train_dataset->sample_length * sizeof(float) + train_dataset->num_samples * sizeof(int);
+    // Check flash memory constraint (datasets live in flash, not RAM)
+    size_t train_flash = train_dataset->num_samples * train_dataset->sample_length * sizeof(float)
+                       + train_dataset->num_samples * sizeof(int);
+    size_t test_flash  = test_dataset->num_samples * test_dataset->sample_length * sizeof(float)
+                       + test_dataset->num_samples * sizeof(int);
+    size_t total_flash = train_flash + test_flash;
 
-    if (dataset_memory > MEMORY_LIMIT_BYTES * 0.8) {  // Use 80% of limit for safety
-        log_error("Dataset too large for memory constraint (%.1f KB > %.1f KB)",
-                  dataset_memory / 1024.0f, (MEMORY_LIMIT_BYTES * 0.8) / 1024.0f);
+    log_info("Dataset flash usage: %.1f KB (train) + %.1f KB (test) = %.1f KB / %.1f KB flash",
+             train_flash / 1024.0f, test_flash / 1024.0f,
+             total_flash / 1024.0f, FLASH_MEMORY_BYTES / 1024.0f);
+
+    if (total_flash > FLASH_MEMORY_BYTES) {
+        log_error("Dataset too large for flash (%.1f KB > %.1f KB)",
+                  total_flash / 1024.0f, FLASH_MEMORY_BYTES / 1024.0f);
         free_dataset(train_dataset);
         free_dataset(test_dataset);
         ipc_tensor_close(shm_ptr, shm_size);
@@ -209,14 +236,14 @@ static void apply_augmentation(float* data, int length) {
 
     int train_rounds = train_dataset->num_samples;
     int test_rounds = test_dataset->num_samples;
-    int epochs = 10000;
+    int epochs = (g_model_config && g_model_config->epochs > 0) ? g_model_config->epochs : 100;
     int epoch_num = 0;
-    dataset_t* active_dataset;
-    int dataset_idx;
+    int dataset_idx = 0;
     int do_testing = 1;
     while (epochs > 0) {
         epoch_num++;
         log_info("Starting epoch %d", epoch_num);
+        shuffle_dataset(train_dataset);
         for(int round = 0;round<train_rounds; round++){
             log_info("Round %d: Training sample %d/%d", round + 1, round + 1, train_rounds);
             tensor_t* sample = get_dataset_sample(train_dataset, round);
@@ -228,7 +255,8 @@ static void apply_augmentation(float* data, int length) {
             // Copy sample data to augmentation buffer and apply augmentation
             int sample_size = output_channels * output_length;
             memcpy(aug_buffer, sample->data, sizeof(float) * sample_size);
-            apply_augmentation(aug_buffer, sample_size);
+            for (int ch = 0; ch < output_channels; ch++)
+                apply_augmentation(aug_buffer + ch * output_length, output_length);
 
             float* shm_data = shm_tensor->buffer;
             memcpy(shm_data, aug_buffer, sizeof(float) * sample_size);
@@ -250,6 +278,10 @@ static void apply_augmentation(float* data, int length) {
             tensor_free(sample);   
         }
 
+        // Wait for pipeline to finish the last training sample before testing
+        if (train_rounds > 0) {
+            sem_wait(bwd_sem);
+        }
         if(do_testing){
             for(int round = 0;round<test_rounds; round++){
                 log_info("Round %d: Testing sample %d/%d", round + 1, round + 1, test_rounds);
@@ -282,10 +314,15 @@ static void apply_augmentation(float* data, int length) {
                 tensor_free(sample);   
             }
         }
+        // Wait for pipeline to finish the last test sample before next epoch
+        if (do_testing && test_rounds > 0) {
+            sem_wait(bwd_sem);
+        }
         epochs--;
         
     }
     
+    free(aug_buffer);
     ipc_sem_close(fwd_sem);
     ipc_sem_close(bwd_sem);
     ipc_tensor_close(shm_ptr, shm_size);

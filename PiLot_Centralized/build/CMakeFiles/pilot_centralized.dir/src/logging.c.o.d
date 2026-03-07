@@ -1,7 +1,7 @@
 CMakeFiles/pilot_centralized.dir/src/logging.c.o: \
- /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/logging.c \
+ /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/logging.c \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/include/logging.h \
+ /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/include/logging.h \
  /usr/include/stdio.h \
  /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
  /usr/include/features.h /usr/include/features-time64.h \

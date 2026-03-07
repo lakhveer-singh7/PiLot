@@ -10,10 +10,9 @@ void log_init(const char* filename) {
         g_log_file = fopen(filename, "w");
         if (!g_log_file) {
             fprintf(stderr, "Failed to open log file: %s\n", filename);
-            g_log_file = stderr;
+        } else {
+            fprintf(stderr, "[LOG] Writing logs to: %s\n", filename);
         }
-    } else {
-        g_log_file = stderr;
     }
 }
 
@@ -25,22 +24,30 @@ void log_cleanup(void) {
 }
 
 static void log_message(const char* level, const char* format, va_list args) {
-    if (!g_log_file) {
-        g_log_file = stderr;
-    }
-    
     // Get timestamp
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    
-    // Print timestamp and level
-    fprintf(g_log_file, "[%ld.%03ld] %s: ", 
-            ts.tv_sec % 1000, ts.tv_nsec / 1000000, level);
-    
-    // Print message
-    vfprintf(g_log_file, format, args);
-    fprintf(g_log_file, "\n");
-    fflush(g_log_file);
+
+    char prefix[64];
+    snprintf(prefix, sizeof(prefix), "[%ld.%03ld] %s: ",
+             ts.tv_sec % 1000, ts.tv_nsec / 1000000, level);
+
+    // Always write to stderr (console)
+    va_list args_copy;
+    va_copy(args_copy, args);
+    fputs(prefix, stderr);
+    vfprintf(stderr, format, args_copy);
+    fputc('\n', stderr);
+    fflush(stderr);
+    va_end(args_copy);
+
+    // Also write to log file if open
+    if (g_log_file) {
+        fputs(prefix, g_log_file);
+        vfprintf(g_log_file, format, args);
+        fputc('\n', g_log_file);
+        fflush(g_log_file);
+    }
 }
 
 void log_info(const char* format, ...) {

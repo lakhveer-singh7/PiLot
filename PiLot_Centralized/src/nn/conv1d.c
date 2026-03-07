@@ -187,44 +187,43 @@ void group_norm_backward(const tensor_t* in, const tensor_t* grad_out,
         for (int g = 0; g < num_groups; g++) {
             int c0 = g * cpg;
             int N = cpg * L;
+
             /* recompute mean, var */
-            double sum = 0;
+            float mean = 0.0f;
             for (int c = c0; c < c0 + cpg; c++)
                 for (int l = 0; l < L; l++)
-                    sum += in->data[b * C * L + c * L + l];
-            float mean = (float)(sum / N);
-            double vsum = 0;
+                    mean += in->data[b * C * L + c * L + l];
+            mean /= (float)N;
+
+            float var = 0.0f;
             for (int c = c0; c < c0 + cpg; c++)
                 for (int l = 0; l < L; l++) {
                     float d = in->data[b * C * L + c * L + l] - mean;
-                    vsum += d * d;
+                    var += d * d;
                 }
-            float var = (float)(vsum / N);
+            var /= (float)N;
             float inv_std = 1.0f / sqrtf(var + eps);
 
-            /* grad through normalisation */
-            double dvar = 0, dmean = 0;
+            /* accumulate sums for backward */
+            float sum_dy = 0.0f, sum_dy_xmu = 0.0f;
             for (int c = c0; c < c0 + cpg; c++)
                 for (int l = 0; l < L; l++) {
                     int idx = b * C * L + c * L + l;
-                    float xhat = (in->data[idx] - mean) * inv_std;
-                    float dy   = grad_out->data[idx];
-                    dvar  += dy * (in->data[idx] - mean);
-                    dmean += dy;
-                    (void)xhat;
+                    float xmu = in->data[idx] - mean;
+                    sum_dy     += grad_out->data[idx];
+                    sum_dy_xmu += grad_out->data[idx] * xmu;
                 }
-            dvar  *= -0.5f * inv_std * inv_std * inv_std;
-            dmean *= -inv_std;
-            dmean += dvar * (-2.0f) * (float)(sum / N - mean) ; /* = 0, but keep for generality */
 
+            /* backward formula */
             for (int c = c0; c < c0 + cpg; c++)
                 for (int l = 0; l < L; l++) {
                     int idx = b * C * L + c * L + l;
-                    float dy = grad_out->data[idx];
-                    grad_in->data[idx] =
-                        dy * inv_std
-                        + (float)(dvar * 2.0 * (in->data[idx] - mean) / N)
-                        + (float)(dmean / N);
+                    float xmu = in->data[idx] - mean;
+                    grad_in->data[idx] = inv_std * (
+                        grad_out->data[idx]
+                        - sum_dy / N
+                        - xmu * sum_dy_xmu / (N * (var + eps))
+                    );
                 }
         }
     }

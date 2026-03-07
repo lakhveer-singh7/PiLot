@@ -114,6 +114,7 @@ void adam_update_bias(float* b, const float* gb, float* m, float* v,
                      int size, float lr, float b1, float b2,
                      float eps, int t);
 float lr_cosine_annealing(float base_lr, int epoch, int T_max, float eta_min);
+void  clip_gradients(float* grad, int size, float max_norm);
 
 /* ------------------------------------------------------------------ */
 /*  Data augmentation                                                  */

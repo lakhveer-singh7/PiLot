@@ -21,7 +21,9 @@ int ipc_tensor_open(const char* shm_name, size_t total_size, int create, void** 
     close(fd);
     if (ptr == MAP_FAILED) return -1;
     *shm_ptr = ptr;
-    memset(ptr, 0, total_size); // Initialize memory to zero
+    if (create) {
+        memset(ptr, 0, total_size); // Initialize memory to zero only on creation
+    }
     return 0;
 }
 

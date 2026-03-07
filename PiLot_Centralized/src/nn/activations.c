@@ -24,10 +24,8 @@ void dropout_forward(const tensor_t* in, tensor_t* out, float* mask,
             }
         }
     } else {
-        for (int i = 0; i < n; i++) {
-            mask[i] = 1.0f;
+        for (int i = 0; i < n; i++)
             out->data[i] = in->data[i];
-        }
     }
 }
 
@@ -64,6 +62,7 @@ void relu_backward(const tensor_t* grad_out, const tensor_t* in,
 /* ================================================================== */
 void softmax_forward(tensor_t* in, tensor_t* out) {
     if (!in || !out || !in->data || !out->data) return;
+    if (in->length != 1) { log_error("softmax expects length==1, got %d", in->length); return; }
     int B = in->batch_size;
     int C = in->channels;
 
@@ -102,6 +101,7 @@ void cross_entropy_backward(const tensor_t* softmax_out, const int* labels,
         float* g = grad_logits->data + b * C;
         float* p = softmax_out->data + b * C;
         int lbl  = labels[b];
+        if (lbl < 0 || lbl >= C) continue;
         for (int j = 0; j < C; j++) g[j] = p[j];
         g[lbl] -= 1.0f;
     }

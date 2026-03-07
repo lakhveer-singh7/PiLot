@@ -6,7 +6,7 @@
  * No IPC, no shared memory, no memory budget.
  *
  * Usage:
- *   ./pilot_centralized --config=configs/model_config_ecg5000.json \
+ *   ./pilot_centralized --config=configs/model_config.json \
  *                       [--dataset=ECG5000] [--epochs=100] [--debug]
  */
 
@@ -168,6 +168,7 @@ int main(int argc, char* argv[]) {
     /* ---------- CLI parsing ---------- */
     char config_file[512] = "";
     char dataset_override[256] = "";
+    char log_dir[512] = "logs";
     int  epochs_override = -1;
     int  debug = 0;
 
@@ -178,11 +179,13 @@ int main(int argc, char* argv[]) {
             strncpy(dataset_override, argv[i] + 10, sizeof(dataset_override) - 1);
         else if (strncmp(argv[i], "--epochs=", 9) == 0)
             epochs_override = atoi(argv[i] + 9);
+        else if (strncmp(argv[i], "--log-dir=", 10) == 0)
+            strncpy(log_dir, argv[i] + 10, sizeof(log_dir) - 1);
         else if (strcmp(argv[i], "--debug") == 0)
             debug = 1;
         else if (strcmp(argv[i], "--help") == 0) {
             printf("Usage: %s --config=<json> [--dataset=<name>] "
-                   "[--epochs=N] [--debug]\n", argv[0]);
+                   "[--epochs=N] [--log-dir=<dir>] [--debug]\n", argv[0]);
             return 0;
         }
     }
@@ -191,6 +194,16 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     if (debug) set_log_level_debug();
+
+    /* Initialize log file */
+    {
+        char mkdir_cmd[600];
+        snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p %s", log_dir);
+        system(mkdir_cmd);
+        char log_path[600];
+        snprintf(log_path, sizeof(log_path), "%s/pilot_centralized.log", log_dir);
+        log_init(log_path);
+    }
 
     /* ---------- Load model config ---------- */
     model_config_t* cfg = load_model_config(config_file);
@@ -203,18 +216,15 @@ int main(int argc, char* argv[]) {
 
     log_info("=== PiLot Centralized ===");
     log_info("Config : %s", config_file);
-    log_info("Dataset: %s,  Epochs: %d,  LR: %.4f",
-             ds_name, max_epochs, cfg->learning_rate);
+    log_info("Dataset: %s,  Epochs: %d,  LR: %.4f", ds_name, max_epochs, cfg->learning_rate);
 
     /* ---------- Load datasets ---------- */
     const char* data_root = getenv("UCR_DATA_ROOT");
     if (!data_root) data_root = "/mnt/d/New folder/UCR_DATASETS";
 
     char train_path[512], test_path[512];
-    snprintf(train_path, sizeof(train_path),
-             "%s/%s/%s_TRAIN", data_root, ds_name, ds_name);
-    snprintf(test_path, sizeof(test_path),
-             "%s/%s/%s_TEST", data_root, ds_name, ds_name);
+    snprintf(train_path, sizeof(train_path), "%s/%s/%s_TRAIN", data_root, ds_name, ds_name);
+    snprintf(test_path, sizeof(test_path), "%s/%s/%s_TEST", data_root, ds_name, ds_name);
 
     dataset_t* train_ds = load_ucr_dataset(train_path);
     dataset_t* test_ds  = load_ucr_dataset(test_path);
@@ -228,14 +238,13 @@ int main(int argc, char* argv[]) {
     normalize_dataset(test_ds);
 
     int num_classes = cfg->num_classes;
-    log_info("Train: %d samples,  Test: %d samples,  Classes: %d",
-             train_ds->num_samples, test_ds->num_samples, num_classes);
+    log_info("Train: %d samples,  Test: %d samples,  Classes: %d", train_ds->num_samples, test_ds->num_samples, num_classes);
 
     /* ---------- Build conv layer stack ---------- */
     conv_layer_state_t* conv_layers = NULL;
     int num_conv = 0;
-    if (build_conv_layers(cfg, &conv_layers, &num_conv) < 0) {
-        log_error("Failed to build conv layer stack"); return 1;
+    if (build_conv_layers(cfg, &conv_layers, &num_conv) < 0 || num_conv == 0) {
+        log_error("Failed to build conv layer stack or no conv layers found"); return 1;
     }
     log_info("Built %d conv layers", num_conv);
 
@@ -256,6 +265,15 @@ int main(int argc, char* argv[]) {
         fc_out = num_classes;
     }
 
+    /* Validate FC in_features matches dual-pooled output */
+    {
+        int expected = conv_layers[num_conv - 1].out_channels * 2;
+        if (fc_in != expected) {
+            log_error("FC in_features (%d) != pooled channels (%d)", fc_in, expected);
+            return 1;
+        }
+    }
+
     fc_config_t* fc = create_fc_config(fc_in, fc_out);
     if (!fc) { log_error("Failed to create FC"); return 1; }
 
@@ -268,6 +286,9 @@ int main(int argc, char* argv[]) {
     float* fc_vw = (float*)calloc(fc_nw, sizeof(float));
     float* fc_mb = (float*)calloc(fc_nb, sizeof(float));
     float* fc_vb = (float*)calloc(fc_nb, sizeof(float));
+    if (!fc_gw || !fc_gb || !fc_mw || !fc_vw || !fc_mb || !fc_vb) {
+        log_error("FC optimizer buffer allocation failed"); return 1;
+    }
 
     /* ---------- Classifier tensors ---------- */
     int last_out_ch  = conv_layers[num_conv - 1].out_channels;
@@ -289,6 +310,7 @@ int main(int argc, char* argv[]) {
     /* Augmentation buffer */
     int input_length = cfg->input_length;
     float* aug_buf = (float*)malloc((size_t)input_length * sizeof(float));
+    if (!aug_buf) { log_error("Augmentation buffer allocation failed"); return 1; }
 
     /* ---------- Training hyperparams ---------- */
     float adam_b1 = 0.9f, adam_b2 = 0.999f, adam_eps = 1e-8f;
@@ -303,8 +325,19 @@ int main(int argc, char* argv[]) {
     int   no_improve = 0;
     float* best_fc_w = (float*)malloc((size_t)fc->weights_size);
     float* best_fc_b = (float*)malloc((size_t)fc->bias_size);
+    if (!best_fc_w || !best_fc_b) { log_error("Best-weight buffer allocation failed"); return 1; }
     memcpy(best_fc_w, fc->weights, (size_t)fc->weights_size);
     memcpy(best_fc_b, fc->bias,    (size_t)fc->bias_size);
+
+    /* Best conv layer weight storage for full-model early stopping */
+    float** best_conv_w = (float**)malloc((size_t)num_conv * sizeof(float*));
+    float** best_conv_b = (float**)malloc((size_t)num_conv * sizeof(float*));
+    for (int i = 0; i < num_conv; i++) {
+        best_conv_w[i] = (float*)malloc((size_t)conv_layers[i].conv->weights_size);
+        best_conv_b[i] = (float*)malloc((size_t)conv_layers[i].conv->bias_size);
+        memcpy(best_conv_w[i], conv_layers[i].conv->weights, (size_t)conv_layers[i].conv->weights_size);
+        memcpy(best_conv_b[i], conv_layers[i].conv->bias,    (size_t)conv_layers[i].conv->bias_size);
+    }
 
     /* Timing */
     struct timespec t_start, t_epoch;
@@ -395,6 +428,8 @@ int main(int argc, char* argv[]) {
 
             for (int i = 0; i < num_conv; i++) {
                 conv_layer_state_t* cl = &conv_layers[i];
+                clip_gradients(cl->grad_w, cl->num_w, 5.0f);
+                clip_gradients(cl->grad_b, cl->num_b, 5.0f);
                 adam_update(cl->conv->weights, cl->grad_w,
                             cl->m_w, cl->v_w, cl->num_w,
                             lr, adam_b1, adam_b2, adam_eps, adam_t, weight_decay);
@@ -402,6 +437,8 @@ int main(int argc, char* argv[]) {
                                 cl->m_b, cl->v_b, cl->num_b,
                                 lr, adam_b1, adam_b2, adam_eps, adam_t);
             }
+            clip_gradients(fc_gw, fc_nw, 5.0f);
+            clip_gradients(fc_gb, fc_nb, 5.0f);
             adam_update(fc->weights, fc_gw, fc_mw, fc_vw, fc_nw,
                         lr, adam_b1, adam_b2, adam_eps, adam_t, weight_decay);
             adam_update_bias(fc->bias, fc_gb, fc_mb, fc_vb, fc_nb,
@@ -480,6 +517,10 @@ int main(int argc, char* argv[]) {
             no_improve    = 0;
             memcpy(best_fc_w, fc->weights, (size_t)fc->weights_size);
             memcpy(best_fc_b, fc->bias,    (size_t)fc->bias_size);
+            for (int i = 0; i < num_conv; i++) {
+                memcpy(best_conv_w[i], conv_layers[i].conv->weights, (size_t)conv_layers[i].conv->weights_size);
+                memcpy(best_conv_b[i], conv_layers[i].conv->bias,    (size_t)conv_layers[i].conv->bias_size);
+            }
             log_info("  ** New best: %.2f%% at epoch %d", best_test_acc, epoch);
         } else {
             no_improve++;
@@ -488,6 +529,10 @@ int main(int argc, char* argv[]) {
                          epoch, best_test_acc, best_epoch);
                 memcpy(fc->weights, best_fc_w, (size_t)fc->weights_size);
                 memcpy(fc->bias,    best_fc_b, (size_t)fc->bias_size);
+                for (int i = 0; i < num_conv; i++) {
+                    memcpy(conv_layers[i].conv->weights, best_conv_w[i], (size_t)conv_layers[i].conv->weights_size);
+                    memcpy(conv_layers[i].conv->bias,    best_conv_b[i], (size_t)conv_layers[i].conv->bias_size);
+                }
                 break;
             }
         }
@@ -510,12 +555,15 @@ int main(int argc, char* argv[]) {
     free(fc_gw); free(fc_gb);
     free(fc_mw); free(fc_vw);
     free(fc_mb); free(fc_vb);
+    for (int i = 0; i < num_conv; i++) { free(best_conv_w[i]); free(best_conv_b[i]); }
+    free(best_conv_w); free(best_conv_b);
     free(best_fc_w); free(best_fc_b);
     free_fc_config(fc);
     free_conv_layers(conv_layers, num_conv);
     free_dataset(train_ds);
     free_dataset(test_ds);
     free_model_config(cfg);
+    log_cleanup();
 
     return 0;
 }

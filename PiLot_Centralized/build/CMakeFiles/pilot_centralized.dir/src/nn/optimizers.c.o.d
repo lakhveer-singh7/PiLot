@@ -1,8 +1,8 @@
 CMakeFiles/pilot_centralized.dir/src/nn/optimizers.c.o: \
- /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/nn/optimizers.c \
+ /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/nn/optimizers.c \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/include/nn_types.h \
- /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/include/logging.h \
+ /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/include/nn_types.h \
+ /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/include/logging.h \
  /usr/include/stdio.h \
  /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
  /usr/include/features.h /usr/include/features-time64.h \

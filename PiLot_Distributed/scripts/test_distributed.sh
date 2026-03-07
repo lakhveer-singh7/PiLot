@@ -43,42 +43,35 @@ echo ""
 
 # Launch Head Device (ID 0)
 echo "[DEVICE 0] Starting Head device..."
-"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=0 --role=head --dataset="$DATASET" \
-    > "$LOG_DIR/device_00_head.log" 2>&1 &
+"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=0 --role=head --dataset="$DATASET" --log-dir="$LOG_DIR" &
 HEAD_PID=$!
 sleep 1
 
 # Launch Layer 1 Workers (2 devices)
 echo "[DEVICE 1] Starting Layer 1 Worker 0/2..."
-"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=1 --role=worker --layer-id=0 --worker-id=0 --num-workers=2 \
-    > "$LOG_DIR/device_01_layer0_w0.log" 2>&1 &
+"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=1 --role=worker --layer-id=0 --worker-id=0 --num-workers=2 --log-dir="$LOG_DIR" &
 sleep 0.3
 
 echo "[DEVICE 2] Starting Layer 1 Worker 1/2..."
-"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=2 --role=worker --layer-id=0 --worker-id=1 --num-workers=2 \
-    > "$LOG_DIR/device_02_layer0_w1.log" 2>&1 &
+"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=2 --role=worker --layer-id=0 --worker-id=1 --num-workers=2 --log-dir="$LOG_DIR" &
 sleep 0.5
 
 # Launch Layer 2 Workers (3 devices)
 echo "[DEVICE 3] Starting Layer 2 Worker 0/3..."
-"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=3 --role=worker --layer-id=1 --worker-id=0 --num-workers=3 \
-    > "$LOG_DIR/device_03_layer1_w0.log" 2>&1 &
+"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=3 --role=worker --layer-id=1 --worker-id=0 --num-workers=3 --log-dir="$LOG_DIR" &
 sleep 0.3
 
 echo "[DEVICE 4] Starting Layer 2 Worker 1/3..."
-"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=4 --role=worker --layer-id=1 --worker-id=1 --num-workers=3 \
-    > "$LOG_DIR/device_04_layer1_w1.log" 2>&1 &
+"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=4 --role=worker --layer-id=1 --worker-id=1 --num-workers=3 --log-dir="$LOG_DIR" &
 sleep 0.3
 
 echo "[DEVICE 5] Starting Layer 2 Worker 2/3..."
-"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=5 --role=worker --layer-id=1 --worker-id=2 --num-workers=3 \
-    > "$LOG_DIR/device_05_layer1_w2.log" 2>&1 &
+"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=5 --role=worker --layer-id=1 --worker-id=2 --num-workers=3 --log-dir="$LOG_DIR" &
 sleep 0.5
 
 # Launch Tail Device (ID 6) - connects directly to Layer 2 output
 echo "[DEVICE 6] Starting Tail classifier..."
-"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=6 --role=tail --classes=12 \
-    > "$LOG_DIR/device_06_tail.log" 2>&1 &
+"$DEVICE_BIN" --config="$MODEL_CONFIG" --id=6 --role=tail --classes=12 --log-dir="$LOG_DIR" &
 TAIL_PID=$!
 sleep 1
 
@@ -90,7 +83,7 @@ echo "Monitoring head device progress (Ctrl+C to stop)..."
 echo "=========================================="
 echo ""
 
-# Monitor head device (it drives the pipeline)
+# Monitor head device log file
 tail -f "$LOG_DIR/device_00_head.log" &
 TAIL_LOG_PID=$!
 
@@ -114,11 +107,12 @@ echo "Test Complete!"
 echo "=========================================="
 echo ""
 echo "Log files available in: $LOG_DIR/"
+ls -la "$LOG_DIR/"*.log 2>/dev/null
 echo ""
 echo "Quick results:"
 echo "  Head device: $LOG_DIR/device_00_head.log"
 echo "  Tail device: $LOG_DIR/device_06_tail.log"
 echo ""
 echo "To view tail classifier statistics:"
-echo "  grep 'Final Tail\|Accuracy\|Loss' $LOG_DIR/device_06_tail.log"
+echo "  grep 'Accuracy\|Loss\|EPOCH' $LOG_DIR/device_06_tail.log"
 echo ""

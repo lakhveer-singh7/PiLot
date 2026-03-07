@@ -24,8 +24,8 @@ static char* read_file_contents(const char* filename) {
         return NULL;
     }
     
-    fread(content, 1, size, f);
-    content[size] = '\0';
+    size_t nread = fread(content, 1, size, f);
+    content[nread] = '\0';
     fclose(f);
     
     return content;
@@ -447,6 +447,12 @@ model_config_t* load_model_config(const char* config_file) {
     value = find_value(content, "memory_limit_bytes");
     if (value) {
         config->memory_limit_bytes = atoi(value);
+        free(value);
+    }
+
+    value = find_value(content, "flash_memory_bytes");
+    if (value) {
+        config->flash_memory_bytes = atoi(value);
         free(value);
     }
     

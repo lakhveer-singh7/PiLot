@@ -1,8 +1,8 @@
 CMakeFiles/pilot_centralized.dir/src/main.c.o: \
- /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/src/main.c \
+ /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/src/main.c \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/include/nn_types.h \
- /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/include/logging.h \
+ /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/include/nn_types.h \
+ /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/include/logging.h \
  /usr/include/stdio.h \
  /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
  /usr/include/features.h /usr/include/features-time64.h \
@@ -70,4 +70,4 @@ CMakeFiles/pilot_centralized.dir/src/main.c.o: \
  /usr/include/x86_64-linux-gnu/bits/mathcalls-macros.h \
  /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
  /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
- /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/include/config_types.h
+ /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/include/config_types.h

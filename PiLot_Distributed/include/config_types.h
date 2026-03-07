@@ -87,6 +87,7 @@ typedef struct {
     int num_classes;
     int input_length;
     int memory_limit_bytes;
+    int flash_memory_bytes;
     float learning_rate;
     // Layer definitions
     int num_layers;

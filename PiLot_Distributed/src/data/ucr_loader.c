@@ -90,8 +90,9 @@ dataset_t* load_ucr_dataset(const char* filename) {
 
     log_info("Dataset file: %d samples, %d time points", num_lines, sample_length);
 
-    // ---------- Allocate dataset (for ALL samples initially using malloc) ----------
-    dataset_t* dataset = sim_malloc(sizeof(dataset_t));
+    // ---------- Allocate dataset in FLASH (plain malloc, not tracked against RAM limit) ----------
+    // On nRF52840: datasets live in 1MB flash, computation uses 256KB RAM
+    dataset_t* dataset = malloc(sizeof(dataset_t));
     if (!dataset) {
         fclose(file);
         return NULL;
@@ -110,6 +111,9 @@ dataset_t* load_ucr_dataset(const char* filename) {
 
     if (!dataset->data || !dataset->labels) {
         log_error("Dataset memory allocation failed");
+        free(dataset->data);
+        free(dataset->labels);
+        free(dataset);
         fclose(file);
         return NULL;
     }
@@ -162,9 +166,10 @@ dataset_t* load_ucr_dataset(const char* filename) {
     }
 
     // ---------- Apply limits AFTER shuffle ----------
-    int max_samples = MEMORY_LIMIT_BYTES / (sample_length * sizeof(float) * 2);
+    // Dataset lives in FLASH (1MB), not RAM — limit by flash budget
+    int max_samples = FLASH_MEMORY_BYTES / (sample_length * sizeof(float) + sizeof(int));
     if (sample_idx > max_samples) {
-        log_info("Limiting dataset: %d → %d samples (memory limit)", sample_idx, max_samples);
+        log_info("Limiting dataset: %d → %d samples (flash limit)", sample_idx, max_samples);
         sample_idx = max_samples;
     }
     int sample_limit = 500;
@@ -174,20 +179,16 @@ dataset_t* load_ucr_dataset(const char* filename) {
     }
     dataset->num_samples = sample_idx;
 
-    // Copy trimmed data to sim_malloc buffers and free large malloc buffers
+    // Trim flash buffers to actual size (realloc keeps data in flash, not tracked as RAM)
     {
         size_t final_data_size  = sample_idx * sample_length * sizeof(float);
         size_t final_label_size = sample_idx * sizeof(int);
-        float* final_data   = sim_malloc(final_data_size);
-        int*   final_labels = sim_malloc(final_label_size);
-        if (final_data && final_labels) {
-            memcpy(final_data,   dataset->data,   final_data_size);
-            memcpy(final_labels, dataset->labels, final_label_size);
-            free(dataset->data);
-            free(dataset->labels);
-            dataset->data   = final_data;
-            dataset->labels = final_labels;
-        }
+        float* trimmed_data   = realloc(dataset->data, final_data_size);
+        int*   trimmed_labels = realloc(dataset->labels, final_label_size);
+        if (trimmed_data)   dataset->data   = trimmed_data;
+        if (trimmed_labels) dataset->labels = trimmed_labels;
+        log_info("Dataset stored in flash: %.1f KB (data) + %.1f KB (labels)",
+                 final_data_size / 1024.0f, final_label_size / 1024.0f);
     }
 
     // ---------- Count unique classes ----------
@@ -216,15 +217,10 @@ dataset_t* load_ucr_dataset(const char* filename) {
 
 void free_dataset(dataset_t* dataset) {
     if (dataset) {
-        if (dataset->data) {
-            size_t data_size = dataset->num_samples * dataset->sample_length * sizeof(float);
-            sim_free_tracked(dataset->data, data_size);
-        }
-        if (dataset->labels) {
-            size_t label_size = dataset->num_samples * sizeof(int);
-            sim_free_tracked(dataset->labels, label_size);
-        }
-        sim_free_tracked(dataset, sizeof(dataset_t));
+        // Dataset lives in flash — use plain free, no RAM tracking
+        free(dataset->data);
+        free(dataset->labels);
+        free(dataset);
     }
 }
 

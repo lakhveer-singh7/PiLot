@@ -15,8 +15,8 @@ static char* read_file_contents(const char* path) {
     fseek(f, 0, SEEK_SET);
     char* buf = (char*)malloc(sz + 1);
     if (!buf) { fclose(f); return NULL; }
-    fread(buf, 1, sz, f);
-    buf[sz] = '\0';
+    size_t nread = fread(buf, 1, sz, f);
+    buf[nread] = '\0';
     fclose(f);
     return buf;
 }

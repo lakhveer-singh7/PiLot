@@ -2,9 +2,12 @@
 #include "nn_types.h"
 #include "comm_types.h"
 #include "config_types.h"
-#include "worker_threads.h"
 #include "ipc_tensor.h"
+#include <signal.h>
+#include <time.h>
 
+static volatile sig_atomic_t g_worker_shutdown = 0;
+static void worker_shutdown_handler(int sig) { (void)sig; g_worker_shutdown = 1; }
 
 // External configuration
 // extern device_json_config_t* g_device_config;
@@ -24,6 +27,9 @@ extern int g_num_workers;
 
 int run_worker_device(int device_id) {
     log_info("Starting Worker Device %d (Conv1D processor)", device_id);
+    signal(SIGINT, worker_shutdown_handler);
+    signal(SIGTERM, worker_shutdown_handler);
+    srand((unsigned)(time(NULL) ^ ((unsigned)device_id * 2654435761u)));
     
     // Shared memory parameters (required)
     int layer_id = g_layer_id;  // Which layer (0-4) 
@@ -59,6 +65,10 @@ int run_worker_device(int device_id) {
     int output_length = (input_length + 2 * padding - kernel_size) / stride + 1;
     
     conv1d_config_t* conv_config = create_conv1d_config(in_channels, worker_out_channels, kernel_size, stride, padding);
+    if (!conv_config) {
+        log_error("Worker %d: Failed to create conv1d config", device_id);
+        return -1;
+    }
     
     float* grad_weights = (float*)sim_malloc(conv_config->weights_size);
     float* grad_bias    = (float*)sim_malloc(conv_config->bias_size);
@@ -218,7 +228,7 @@ int run_worker_device(int device_id) {
     
     log_info("starting round loop...............");
     int round = 1;
-    while (1) {
+    while (!g_worker_shutdown) {
         log_info("Worker %d (Layer %d): Starting round %d", device_id, layer_id, round);
         if (worker_id == 0) {
             memset(grad_output_buffer, 0,sizeof(float) * in_channels * input_length); // Clear backward gradient buffer for this new sample
@@ -226,7 +236,10 @@ int run_worker_device(int device_id) {
         }
         
         // log_info("Worker %d (Layer %d): Waiting for sample %d...", device_id, layer_id, round);
-        sem_wait(prev_fwd_sem);
+        if (sem_wait(prev_fwd_sem) < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
         // log_info("Worker %d (Layer %d): Detected sample %d ready", device_id, layer_id, round);
         log_info("Worker %d (Layer %d): Input[0-4]: %.4f %.4f %.4f %.4f %.4f",
                  device_id, layer_id, round,
@@ -240,7 +253,9 @@ int run_worker_device(int device_id) {
         // Processing constraint: simulate Conv1D FLOPs on 64 MHz MCU
         // Conv1D FLOPs ≈ 2 * out_channels * in_channels * kernel_size * output_length
         proc_delay_flops(2L * worker_out_channels * in_channels * kernel_size * output_length);
-        int num_groups = 8; 
+        int num_groups = 8;
+        if (worker_out_channels % num_groups != 0)
+            num_groups = 1;  /* fallback if not divisible */
         group_norm_forward(&conv_out, &gn_pre_relu, num_groups);
         relu_forward(&gn_pre_relu, &gn_out);
         
@@ -266,7 +281,10 @@ int run_worker_device(int device_id) {
         }
 
         // log_info("Worker %d (Layer %d): Completed forward pass for sample %d", device_id, layer_id, round);
-        sem_wait(next_bwd_sem);
+        if (sem_wait(next_bwd_sem) < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
         // log_info("Worker %d (Layer %d): Detected backward pass start for sample %d", device_id, layer_id, round);
         int is_testing = prev_shm->is_testing;
 
@@ -303,6 +321,8 @@ int run_worker_device(int device_id) {
             log_info("conv backward output[0-4]: %.4f %.4f %.4f %.4f %.4f", 
                      grad_input.data[0], grad_input.data[1], grad_input.data[2],
                      grad_input.data[3], grad_input.data[4]);
+            clip_gradients(grad_weights, num_w, 5.0f);
+            clip_gradients(grad_bias, num_b, 5.0f);
             // Adam optimizer with cosine annealing LR
             float base_lr = g_model_config->learning_rate;
             float lr = lr_cosine_annealing(base_lr, current_epoch, 60, 1e-5f);
@@ -320,10 +340,14 @@ int run_worker_device(int device_id) {
                      grad_input.data[0], grad_input.data[1],
                      grad_input.data[2], grad_input.data[3],
                      grad_input.data[4]);
-            // Write gradients back to previous layer's shared memory
-            float* prev_grad_ptr = grad_output_buffer; // Buffer for this worker's output gradients to previous layer
+            // Write gradients back to previous layer's shared memory (atomic for multi-worker safety)
+            float* prev_grad_ptr = grad_output_buffer;
             for (int i = 0; i < in_channels * input_length; i++) {
-                prev_grad_ptr[i] += grad_input.data[i];
+                union { float f; int iv; } old_v, new_v;
+                do {
+                    old_v.f = prev_grad_ptr[i];
+                    new_v.f = old_v.f + grad_input.data[i];
+                } while (!__sync_bool_compare_and_swap((int*)&prev_grad_ptr[i], old_v.iv, new_v.iv));
             }
         }
         

@@ -54,10 +54,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized
+CMAKE_SOURCE_DIR = /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build
+CMAKE_BINARY_DIR = /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build
 
 #=============================================================================
 # Directory level rules for the build root directory
@@ -85,14 +85,14 @@ clean: CMakeFiles/pilot_centralized.dir/clean
 CMakeFiles/pilot_centralized.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pilot_centralized.dir/build.make CMakeFiles/pilot_centralized.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pilot_centralized.dir/build.make CMakeFiles/pilot_centralized.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10,11,12 "Built target pilot_centralized"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10,11,12 "Built target pilot_centralized"
 .PHONY : CMakeFiles/pilot_centralized.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/pilot_centralized.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles 12
+	$(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles 12
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/pilot_centralized.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles 0
 .PHONY : CMakeFiles/pilot_centralized.dir/rule
 
 # Convenience name for target.
@@ -102,7 +102,7 @@ pilot_centralized: CMakeFiles/pilot_centralized.dir/rule
 # codegen rule for target.
 CMakeFiles/pilot_centralized.dir/codegen:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/pilot_centralized.dir/build.make CMakeFiles/pilot_centralized.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10,11,12 "Finished codegen for target pilot_centralized"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot/PiLot_Centralized/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10,11,12 "Finished codegen for target pilot_centralized"
 .PHONY : CMakeFiles/pilot_centralized.dir/codegen
 
 # clean rule for target.

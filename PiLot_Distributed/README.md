@@ -1,402 +1,661 @@
-# LayerWise Distributed Pilot - C Implementation (Shared Memory Communication)
+# PiLot Distributed
 
-This is a C implementation of a distributed neural network system that simulates embedded devices with severe memory constraints connected via **POSIX shared memory communication**. The system implements a **4-layer CNN (1→16→32→48→64 channels) distributed across 12 nRF52840 devices** with **pipeline phase coordination**, **sequential processing architecture**, and **bidirectional gradient flow** using dedicated shared memory segments.
+**Multi-device pipelined CNN training for time-series classification on nRF52840 clusters**
 
-## Architecture Overview
+PiLot Distributed is the core implementation of the PiLot (Pipeline Lightweight on-device Training) framework. It partitions a 1D-CNN across multiple simulated nRF52840 devices, each running as a separate OS process. Devices communicate via POSIX shared memory and semaphores, forming a fully pipelined forward–backward training loop with per-sample gradient updates.
 
-**12-Device nRF52840 Distributed CNN: Pipeline-Coordinated Sequential Processing (Pure Shared Memory)**
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [CNN Model](#cnn-model)
+- [Device Roles](#device-roles)
+- [Inter-Process Communication](#inter-process-communication)
+- [Control Flow](#control-flow)
+- [Project Structure](#project-structure)
+- [Building](#building)
+- [Running](#running)
+- [Configuration](#configuration)
+- [Training Features](#training-features)
+- [Memory Model](#memory-model)
+- [Supported Datasets](#supported-datasets)
+
+---
+
+## Overview
+
+| Property | Value |
+|---|---|
+| **Target Hardware** | Nordic nRF52840 (ARM Cortex-M4F @ 64 MHz) |
+| **RAM per Device** | 256 KB (weights, activations, gradients, optimizer state) |
+| **Flash per Device** | 1 MB (dataset storage on head device) |
+| **Default Device Count** | 7 (1 Head + 2 L0 Workers + 3 L1 Workers + 1 Tail) |
+| **Language** | C11 |
+| **Build System** | CMake 3.20+ |
+| **IPC** | POSIX shared memory (`shm_open` / `mmap`) + named semaphores |
+| **Dependencies** | `libm`, `pthread`, `librt` |
+
+The distributed version demonstrates that on-device training of a CNN can be **partitioned across resource-constrained MCUs** using layer-wise parallelism, where each device holds only its own layer's parameters and optimizer state within the 256 KB RAM budget.
+
+---
+
+## Architecture
+
+### 7-Device Pipeline Layout
 
 ```
-Head (0) → Layer0[1] → Layer1[2,3] → Layer2[4,5,6] → Layer3[7,8,9,10] → Tail (11)
-  Data     1→16ch    16→32 total   32→48 total    48→64 total         FC 128→12
+┌─────────┐    ┌──────────────┐    ┌───────────────┐    ┌──────┐
+│  HEAD   │───►│  LAYER 0     │───►│  LAYER 1      │───►│ TAIL │
+│ Device 0│    │  2 Workers   │    │  3 Workers     │    │Dev 6 │
+│         │    │ Dev 1, Dev 2 │    │ Dev 3,4,5      │    │      │
+│ Dataset │◄───│ Conv1D 1→32  │◄───│ Conv1D 32→48   │◄───│ FC   │
+│ Feeder  │    │ GN + ReLU    │    │ GN + ReLU      │    │Pool  │
+└─────────┘    └──────────────┘    └───────────────┘    └──────┘
+   Feed           16ch each           16ch each          Classify
+   Samples        ──────────►         ──────────►        + Loss
+   Augment        ◄──────────         ◄──────────        + Grads
+                  Grad accum          Grad accum
 ```
 
-### Layer Distribution (Pipeline Architecture)
+Each worker in a layer is responsible for a **slice of output channels**:
+- Layer 0: 2 workers × 16 channels = 32 total output channels
+- Layer 1: 3 workers × 16 channels = 48 total output channels
 
-**Sequential processing with pipeline phase coordination across 4 convolutional layers:**
+---
 
-- **Layer 0**: Device 1 - Conv1D (1→16 channels)
-- **Layer 1**: Devices 2-3 - Conv1D (16→16 each, combined = 32 channels)
-- **Layer 2**: Devices 4-6 - Conv1D (32→16 each, combined = 48 channels) 
-- **Layer 3**: Devices 7-10 - Conv1D (48→16 each, combined = 64 channels)
-- **Classifier**: Device 11 - Dual pooling + FC (64 channels → 128 features → 12 classes)
+## CNN Model
 
-### Device Roles
+### Layer Details (Same as Centralized)
 
-- **Head Device (0)**: Dataset loader and pipeline coordinator - drives forward/backward phases
-- **Worker Devices (1-10)**: Sequential Conv1D layer processors - wait for phase signals
-- **Tail Device (11)**: Classifier with dual pooling (avg+max) and fully connected layer
+| Layer | Type | Config | Input Shape | Output Shape | Parameters |
+|---|---|---|---|---|---|
+| 0 | Conv1D | 1→32, k=5, s=1, p=2 | 1×300 | 32×300 | 192 |
+| — | GroupNorm | 8 groups | 32×300 | 32×300 | 0 |
+| — | LeakyReLU | α=0.01 | 32×300 | 32×300 | 0 |
+| 1 | Conv1D | 32→48, k=5, s=2, p=2 | 32×300 | 48×150 | 7,728 |
+| — | GroupNorm | 8 groups | 48×150 | 48×150 | 0 |
+| — | LeakyReLU | α=0.01 | 48×150 | 48×150 | 0 |
+| 2 | DualPool | GAP + GMP | 48×150 | 96×1 | 0 |
+| 3 | Dropout | rate=0.2 | 96×1 | 96×1 | 0 |
+| 4 | FC | 96→12 | 96×1 | 12×1 | 1,164 |
+| 5 | Softmax | — | 12×1 | 12×1 | 0 |
 
-### Pipeline Phases
+**Total: 9,084 trainable parameters** distributed across 7 devices.
 
-The head device orchestrates training through sequential pipeline phases:
+### Per-Device Parameter Distribution
 
-**Forward Pass Phases:**
-- `PHASE_FORWARD_LAYER0` → Layer 0 worker processes
-- `PHASE_FORWARD_LAYER1` → Layer 1 workers process
-- `PHASE_FORWARD_LAYER2` → Layer 2 workers process
-- `PHASE_FORWARD_LAYER3` → Layer 3 workers process + Tail classifies
+| Device | Role | Parameters Held | RAM Estimate |
+|---|---|---|---|
+| Device 0 | Head | 0 (dataset in flash) | Dataset I/O only |
+| Device 1 | L0 Worker 0 | 96 (Conv 1→16, k=5) | ~82 KB |
+| Device 2 | L0 Worker 1 | 96 (Conv 1→16, k=5) | ~82 KB |
+| Device 3 | L1 Worker 0 | 2,576 (Conv 32→16, k=5) | ~221 KB |
+| Device 4 | L1 Worker 1 | 2,576 (Conv 32→16, k=5) | ~221 KB |
+| Device 5 | L1 Worker 2 | 2,576 (Conv 32→16, k=5) | ~221 KB |
+| Device 6 | Tail | 1,164 (FC 96→12) | ~34 KB |
 
-**Backward Pass Phases:**
-- `PHASE_BACKWARD_LAYER3` → Tail sends gradients, Layer 3 workers backprop
-- `PHASE_BACKWARD_LAYER2` → Layer 2 workers backprop
-- `PHASE_BACKWARD_LAYER1` → Layer 1 workers backprop
-- `PHASE_BACKWARD_LAYER0` → Layer 0 worker backprops
-- `PHASE_DONE` → All devices synchronize, training complete
+Each worker's RAM includes: weights + bias + activations + gradient buffers + AdamW optimizer state (2× parameter count for m and v).
 
-## Features
+---
 
-- **Pure Shared Memory Communication**: High-performance inter-process communication using POSIX shared memory (no sockets)
-- **Pipeline Phase Coordination**: Head device orchestrates sequential forward→backward processing phases
-- **Sequential Processing Architecture**: Workers process forward pass, then backward pass (no threading overhead)
-- **Dedicated Gradient Segments**: Separate shared memory for gradients (`SHM_GRAD_LAYER0-3`) prevents deadlock
-- **Parallel Channel Processing**: Multiple workers per layer process 16 channels each (1+2+3+4 topology)
-- **Barrier Synchronization**: Phase-based coordination ensures proper layer-wise sequencing
-- **Memory Simulation**: Each device enforces 256KB memory limit (nRF52840 constraint)
-- **Neural Network**: 4-layer CNN with Conv1D, Group Normalization, ReLU, Pooling, FC
-- **Real Dataset**: Processes UCR time series classification datasets (Cricket_X with 12 classes)
-- **Single Binary**: Same executable for all devices, configured via command-line arguments
-- **Scalable Architecture**: Easy to add more workers per layer for wider networks
+## Device Roles
 
-## Quick Start
+### Head (Device 0) — Data Feeder
 
-### Build & Run
-```bash
-# Build the project
-mkdir -p build && cd build
-cmake .. && make
+- Loads the UCR dataset from flash memory (plain `malloc`, not counted against RAM)
+- Normalizes data (z-score per sample)
+- Drives the training schedule: epoch loop → sample loop (train then test)
+- Applies data augmentation during training (jitter, scaling, magnitude warp, time shift)
+- Writes raw/augmented samples into Layer 0 shared memory
+- Creates shared memory `/ipc_tensor_L0` and semaphores
 
-# Run 12-device distributed training (1→16→32→48→64 channels)
-cd ..
-bash test_distributed.sh
+### Workers (Devices 1–5) — Conv1D Processors
+
+- Each worker computes its **slice** of the convolution (subset of output channels)
+- Forward: Conv1D → GroupNorm → LeakyReLU on its channel slice
+- Backward: ReLU backward → GroupNorm backward → Conv1D backward
+- Atomically accumulates input gradients for the previous layer
+- Updates its own parameters via AdamW with cosine annealing LR
+- Worker 0 of each layer creates the next layer's shared memory segment
+
+### Tail (Device 6) — Classifier
+
+- Reads the concatenated output from all Layer 1 workers
+- Applies Dual Pooling (GAP + GMP), Dropout, FC, Softmax
+- Computes Cross-Entropy loss and backpropagates through the classifier
+- Sends gradients back through the pipeline
+- Tracks and reports training/test accuracy, loss, inference latency
+- Implements early stopping (patience=50)
+
+---
+
+## Inter-Process Communication
+
+### Shared Memory Layout
+
+Each inter-layer link uses a POSIX shared memory region (`shm_open`):
+
+```
+┌──────────────────────────────────────────────────────┐
+│                  ipc_layer_shm_t                     │
+├──────────────────────────────────────────────────────┤
+│ label         (int)   — ground-truth class label     │
+│ counter       (int)   — atomic forward completion    │
+│ bwd_counter   (int)   — atomic backward completion   │
+│ channels      (int)   — tensor channel count         │
+│ length        (int)   — tensor spatial length        │
+│ sample_id     (int)   — current sample index         │
+│ is_testing    (int)   — 0=training, 1=testing        │
+├──────────────────────────────────────────────────────┤
+│ buffer[0 .. N-1]      — forward activation data     │
+│ buffer[N .. 2N-1]     — backward gradient data       │
+└──────────────────────────────────────────────────────┘
+   where N = channels × length
 ```
 
-### Monitor Training Progress
-```bash
-# Watch head device (pipeline coordinator)
-tail -f logs/device_00_head.log | grep -E "round|Starting round"
+### Semaphore Protocol
 
-# Watch tail classifier
-tail -f logs/device_11_tail.log | grep -E "Classification|Loss"
+Each link has two named POSIX semaphores:
 
-# Watch specific worker
-tail -f logs/device_01_layer0_w0.log
+| Semaphore | Direction | Purpose |
+|---|---|---|
+| `/ipc_sem_L{i}_fwd` | Forward | Signals that forward data is ready for consumers |
+| `/ipc_sem_L{i}_bwd` | Backward | Signals that backward gradients are ready for producers |
 
-# Check all device status
-ls logs/*.log
+**Forward flow**: The last worker to finish writing atomically increments `counter`. When `counter == num_workers`, it posts `fwd_sem` once per next-layer consumer, then resets the counter.
 
-# Stop training (Ctrl+C in test script terminal, cleanup is automatic)
+**Backward flow**: The last worker to finish accumulating gradients increments `bwd_counter`. When `bwd_counter == num_workers`, it posts `bwd_sem` once per previous-layer producer, then resets.
+
+### Multi-Worker Gradient Accumulation
+
+When multiple workers in a layer compute `grad_input` (gradients w.r.t. the shared input), they must atomically accumulate into the same buffer. This uses a **lock-free CAS (Compare-And-Swap) loop**:
+
+```c
+// Atomic float addition via CAS loop
+do {
+    old_val = *addr;
+    new_val = old_val + grad_value;
+} while (!__sync_bool_compare_and_swap((int*)addr, *(int*)&old_val, *(int*)&new_val));
 ```
 
-### Manual Device Launch
-```bash
-cd build
+---
 
-# Head device (pipeline coordinator)
-./device --id=0 --role=head --dataset=Cricket_X
+## Control Flow
 
-# Layer 0 Worker (1 device)
-./device --id=1 --role=worker --layer-id=0 --worker-id=0 --num-workers=1
+### Full Pipeline: Single Sample (Training)
 
-# Layer 1 Workers (2 devices)
-./device --id=2 --role=worker --layer-id=1 --worker-id=0 --num-workers=2
-./device --id=3 --role=worker --layer-id=1 --worker-id=1 --num-workers=2
+```mermaid
+flowchart LR
+    subgraph HEAD ["HEAD (Device 0)"]
+        H1[Load & Augment Sample]
+        H2[Write to SHM L0]
+        H3[Post fwd_sem_L0 × N]
+        H4[Wait bwd_sem_L0]
+    end
 
-# Layer 2 Workers (3 devices)
-./device --id=4 --role=worker --layer-id=2 --worker-id=0 --num-workers=3
-./device --id=5 --role=worker --layer-id=2 --worker-id=1 --num-workers=3
-./device --id=6 --role=worker --layer-id=2 --worker-id=2 --num-workers=3
+    subgraph L0 ["LAYER 0 WORKERS (Dev 1-2)"]
+        W0A[Wait fwd_sem_L0]
+        W0B[Conv1D → GN → ReLU]
+        W0C["Write channel slice to SHM L1"]
+        W0D["Atomic: counter++ → post fwd_sem_L1"]
+        W0E[Wait bwd_sem_L1]
+        W0F[ReLU← → GN← → Conv←]
+        W0G[AdamW Update Own Params]
+        W0H["Atomic accum grad → SHM L0"]
+        W0I["bwd_counter++ → post bwd_sem_L0"]
+    end
 
-# Layer 3 Workers (4 devices)
-./device --id=7 --role=worker --layer-id=3 --worker-id=0 --num-workers=4
-./device --id=8 --role=worker --layer-id=3 --worker-id=1 --num-workers=4
-./device --id=9 --role=worker --layer-id=3 --worker-id=2 --num-workers=4
-./device --id=10 --role=worker --layer-id=3 --worker-id=3 --num-workers=4
+    subgraph L1 ["LAYER 1 WORKERS (Dev 3-5)"]
+        W1A[Wait fwd_sem_L1]
+        W1B[Conv1D → GN → ReLU]
+        W1C["Write channel slice to SHM L2"]
+        W1D["Atomic: counter++ → post fwd_sem_L2"]
+        W1E[Wait bwd_sem_L2]
+        W1F[ReLU← → GN← → Conv←]
+        W1G[AdamW Update Own Params]
+        W1H["Atomic accum grad → SHM L1"]
+        W1I["bwd_counter++ → post bwd_sem_L1"]
+    end
 
-# Tail device (classifier)
-./device --id=11 --role=tail --num-classes=12
+    subgraph TAIL ["TAIL (Device 6)"]
+        T1[Wait fwd_sem_L2]
+        T2["DualPool → Dropout → FC → Softmax"]
+        T3[Cross-Entropy Loss]
+        T4["CE← → FC← → Dropout← → Pool←"]
+        T5[AdamW Update FC Params]
+        T6["Write grad to SHM L2"]
+        T7["Post bwd_sem_L2 × N"]
+    end
+
+    H3 --> W0A
+    W0D --> W1A
+    W1D --> T1
+    T7 --> W1E
+    W1I --> W0E
+    W0I --> H4
 ```
 
-## Implementation Details
+### Epoch-Level Control Flow
 
-### Shared Memory Architecture
-
-**Forward Data Flow (5 shared memory segments):**
-- `SHM_LAYER0_INPUT` (key 0x1234): Head writes raw samples (1×300)
-- `SHM_LAYER1_INPUT` (key 0x1235): Layer 0 writes, Layer 1 reads (16×300)
-- `SHM_LAYER2_INPUT` (key 0x1236): Layer 1 writes, Layer 2 reads (32×300)
-- `SHM_LAYER3_INPUT` (key 0x1237): Layer 2 writes, Layer 3 reads (48×300)
-- `SHM_LAYER4_INPUT` (key 0x1238): Layer 3 writes, Tail reads (64×300)
-
-**Backward Gradient Flow (4 dedicated gradient segments):**
-- `SHM_GRAD_LAYER0` (key 0x123A): For Layer 0 gradients
-- `SHM_GRAD_LAYER1` (key 0x123B): For Layer 1 gradients
-- `SHM_GRAD_LAYER2` (key 0x123C): For Layer 2 gradients
-- `SHM_GRAD_LAYER3` (key 0x123D): For Layer 3 gradients
-
-**Pipeline Control Segment:**
-- `SHM_PIPELINE_CONTROL` (key 0x1239): Phase signals and barrier synchronization
-
-### Command-Line Arguments
-```bash
---id=<0-11>              # Device ID (required)
---role=<head|worker|tail> # Device role (required)
---layer-id=<0-3>         # Convolutional layer ID (workers only)
---worker-id=<0-N>        # Worker index within layer (workers only)
---num-workers=<N>        # Total workers in this layer (workers only)
---dataset=<name>         # Dataset name (head only, default: Cricket_X)
---num-classes=<N>        # Number of output classes (tail only, default: 12)
+```mermaid
+flowchart TD
+    A[HEAD: Start Epoch E] --> B[Shuffle Training Set]
+    B --> C[HEAD: For each training sample]
+    C --> D["HEAD: Augment → Write SHM → Post fwd_sem"]
+    D --> E["WORKERS: Forward pass through all layers"]
+    E --> F["TAIL: Pool → FC → Softmax → Loss"]
+    F --> G{"TAIL: is_testing?"}
+    G -- No Training --> H["TAIL: Backward → Write grads → Post bwd_sem"]
+    H --> I["WORKERS: Backward pass all layers → AdamW update"]
+    I --> J["HEAD: Wait bwd_sem completed"]
+    J --> K{More train samples?}
+    K -- Yes --> C
+    K -- No --> L[HEAD: For each test sample]
+    L --> M["HEAD: Write raw sample no augmentation"]
+    M --> N["WORKERS: Forward only"]
+    N --> O["TAIL: Classify → Track accuracy"]
+    O --> P["TAIL: Post bwd_sem drain pipeline"]
+    P --> Q{More test samples?}
+    Q -- Yes --> L
+    Q -- No --> R["TAIL: Log epoch metrics"]
+    R --> S{"TAIL: Test acc improved?"}
+    S -- Yes --> T[Save best FC weights]
+    S -- No --> U[Increment patience]
+    U --> V{Patience exceeded?}
+    V -- Yes --> W[Freeze FC updates, restore best]
+    V -- No --> X{More epochs?}
+    T --> X
+    W --> X
+    X -- Yes --> A
+    X -- No --> Y[All devices exit]
 ```
 
-### Pipeline Coordination Flow
+### Device Startup & IPC Creation Order
 
-**Each Sample Processing:**
+```mermaid
+sequenceDiagram
+    participant H as HEAD (Dev 0)
+    participant W0 as L0 Worker 0 (Dev 1)
+    participant W1 as L0 Worker 1 (Dev 2)
+    participant W2 as L1 Worker 0 (Dev 3)
+    participant W3 as L1 Worker 1 (Dev 4)
+    participant W4 as L1 Worker 2 (Dev 5)
+    participant T as TAIL (Dev 6)
+
+    Note over H: Creates /ipc_tensor_L0, fwd/bwd sems
+    H->>H: Launch (creates SHM L0)
+    Note over H: sleep 2s
+
+    W0->>W0: Launch (opens SHM L0, creates SHM L1)
+    Note over W0: sleep 1s
+    W1->>W1: Launch (opens SHM L0, opens SHM L1)
+    Note over W1: sleep 2s
+
+    W2->>W2: Launch (opens SHM L1, creates SHM L2)
+    Note over W2: sleep 1s
+    W3->>W3: Launch (opens SHM L1, opens SHM L2)
+    Note over W3: sleep 1s
+    W4->>W4: Launch (opens SHM L1, opens SHM L2)
+    Note over W4: sleep 2s
+
+    T->>T: Launch (opens SHM L2)
+    Note over T: All devices connected, pipeline active
 ```
-1. Head: Load sample → Write to SHM_LAYER0_INPUT → Signal PHASE_FORWARD_LAYER0
-2. Layer 0 Worker: Wait for phase → Read input → Conv1D → Write output → Signal complete
-3. Head: Wait for Layer 0 → Signal PHASE_FORWARD_LAYER1
-4. Layer 1 Workers: Wait for phase → Read input → Conv1D → Write output → Signal complete
-5. Head: Wait for Layer 1 → Signal PHASE_FORWARD_LAYER2
-6. Layer 2 Workers: Wait for phase → Read input → Conv1D → Write output → Signal complete
-7. Head: Wait for Layer 2 → Signal PHASE_FORWARD_LAYER3
-8. Layer 3 Workers: Wait for phase → Read input → Conv1D → Write output → Signal complete
-9. Tail: Wait for Layer 3 → Pooling + FC + Softmax → Compute loss
 
-10. Head: Signal PHASE_BACKWARD_LAYER3
-11. Tail: Write gradients → Layer 3: Read gradients → Conv1D backward → Write gradients
-12. Head: Signal PHASE_BACKWARD_LAYER2
-13. Layer 2: Read gradients → Conv1D backward → Write gradients
-14. Head: Signal PHASE_BACKWARD_LAYER1
-15. Layer 1: Read gradients → Conv1D backward → Write gradients
-16. Head: Signal PHASE_BACKWARD_LAYER0
-17. Layer 0: Read gradients → Conv1D backward → Write gradients
+**Critical ordering**: Each shared memory segment must be created before other devices try to open it. Worker 0 of each layer creates the next layer's segment. Launch delays ensure creation happens before open.
 
-18. Head: Signal PHASE_DONE (after all samples processed)
-```
-
-### Memory Management
-- Custom `sim_malloc`/`sim_free` enforces 256KB limit per device
-- Memory usage tracking and peak usage reporting
-- Tensor operations with bounds checking
-- Shared memory segments cleaned up automatically on exit
-
-### Neural Network Architecture
-**Layer-wise channel expansion: 1→16→32→48→64 channels**
-
-- **Layer 0 (Device 1)**: Conv1D 1→16 channels
-  - Input: 1×300 → Output: 16×300
-  - Single worker processes entire input
-  
-- **Layer 1 (Devices 2-3)**: Conv1D 16→32 channels
-  - 2 workers, each processes full 16-channel input → outputs 16 channels
-  - Combined output: 32×300
-  
-- **Layer 2 (Devices 4-6)**: Conv1D 32→48 channels
-  - 3 workers, each processes full 32-channel input → outputs 16 channels
-  - Combined output: 48×300
-  
-- **Layer 3 (Devices 7-10)**: Conv1D 48→64 channels
-  - 4 workers, each processes full 48-channel input → outputs 16 channels
-  - Combined output: 64×300
-  
-- **Classifier (Device 11)**: Dual pooling + FC
-  - Global Average Pooling: 64 channels → 64 features
-  - Global Max Pooling: 64 channels → 64 features
-  - Concatenate: 128 features
-  - Fully Connected: 128→12 classes
-  - Softmax + Cross-entropy loss
-
-### Processing Model
-- **Sequential Architecture**: Workers process forward pass completely, then backward pass
-- **No Threading**: Single-threaded devices eliminate race conditions and synchronization overhead
-- **Pipeline Phases**: Head device coordinates all processing through phase signals
-- **Barrier Synchronization**: All workers synchronize at phase boundaries via shared memory
-- **Dedicated Gradient Paths**: Separate backward gradient segments prevent deadlock
+---
 
 ## Project Structure
 
 ```
-FirmWare/
+PiLot_Distributed/
+├── CMakeLists.txt                  # Build configuration
+├── README.md                       # This file
+├── configs/
+│   ├── model_config.json           # Active configuration
+│   ├── model_config_cricket_x.json # Dataset-specific configs
+│   ├── model_config_ecg5000.json
+│   └── ...                         # Multiple dataset × architecture configs
+├── include/
+│   ├── lw_pilot_sim.h              # Global sim: memory limits, device roles, proc delay
+│   ├── nn_types.h                  # Tensor, Conv1D, FC, activation, optimizer API
+│   ├── config_types.h              # Model config structs (with flash_memory_bytes)
+│   ├── comm_types.h                # Message types, shared memory comm API
+│   ├── ipc_tensor.h                # POSIX shm/sem tensor IPC primitives
+│   ├── shared_memory.h             # SysV shared memory manager (legacy)
+│   └── worker_threads.h            # Worker thread pool types
+├── scripts/
+│   └── test_distributed.sh         # Launch script for full pipeline
 ├── src/
-│   ├── main.c                    # Entry point & argument parsing
-│   ├── shared_memory.c           # POSIX shared memory management
-│   ├── devices/                  # Device role implementations
-│   │   ├── head_feeder.c         # Dataset loading & pipeline coordination
-│   │   ├── worker_conv1.c        # Conv1D processing (sequential)
-│   │   └── tail_classifier.c     # Classification & gradient distribution
-│   ├── nn/                       # Neural network layers  
-│   │   ├── conv1d.c              # 1D convolution + group norm
-│   │   ├── pooling.c             # Global average/max pooling
-│   │   ├── fully_connected.c     # Dense layer implementation
-│   │   └── activations.c         # ReLU, softmax, loss functions
-│   ├── data/                     # Data processing
-│   │   ├── tensor.c              # Tensor operations
-│   │   └── ucr_loader.c          # UCR dataset loading
-│   ├── config/                   # Configuration management
-│   │   └── config_loader.c       # JSON config parsing
-│   └── utils/                    # Utilities
-│       └── logging.c             # Debug logging
-├── include/                      # Header files
-│   ├── shared_memory.h           # Shared memory API
-│   ├── comm_types.h              # Shared memory segment enums
-│   ├── config_types.h            # Configuration structures
-│   └── ...
-├── configs/                      # Configuration files
-│   └── model_config_nrf52840_realistic.json
-├── test_data/                    # Sample UCR dataset
-│   ├── Cricket_X_TRAIN.txt
-│   └── Cricket_X_TEST.txt
-├── scripts/                      # Build and run scripts
-│   ├── build.sh
-│   └── run_test.sh
-├── test_distributed.sh           # 12-device test launcher
-└── CMakeLists.txt               # Build configuration
+│   ├── main.c                      # Entry point: CLI parsing, role dispatch
+│   ├── shared_memory.c             # SysV shared memory implementation (legacy)
+│   ├── devices/
+│   │   ├── head_feeder.c           # HEAD: dataset loading, augmentation, sample injection
+│   │   ├── worker_conv1.c          # WORKER: Conv1D + GN + ReLU + backward + AdamW
+│   │   └── tail_classifier.c       # TAIL: pooling, FC, softmax, loss, early stopping
+│   ├── nn/
+│   │   ├── conv1d.c                # Conv1D forward & backward + GroupNorm
+│   │   ├── fully_connected.c       # FC forward & backward
+│   │   ├── activations.c           # LeakyReLU, Softmax, Dropout, Cross-Entropy
+│   │   ├── pooling.c               # Dual Pooling (GAP+GMP) forward & backward
+│   │   └── optimizers.c            # AdamW, Cosine Annealing LR, Gradient Clipping
+│   ├── comm/
+│   │   ├── ipc_tensor.c            # POSIX shm_open/mmap/sem_open implementation
+│   │   └── shm_protocol.c          # Higher-level shared memory protocol
+│   ├── data/
+│   │   ├── ucr_loader.c            # UCR dataset loader (flash-aware, sim_malloc separation)
+│   │   └── tensor.c                # Tensor utilities
+│   ├── config/
+│   │   └── config_loader.c         # JSON config parser
+│   ├── threading/
+│   │   └── worker_threads.c        # Thread pool for worker devices
+│   └── utils/
+│       └── logging.c               # Logging with level control
+└── build/
+    └── device                      # Compiled binary (single binary, role via CLI)
 ```
 
-## Data Flow
+---
 
-### Forward Pass (Sequential Layer Processing)
-```
-Head (0): Load Raw Sample (1×300) → Write to SHM_LAYER0_INPUT
-  ↓ [PHASE_FORWARD_LAYER0]
-Layer 0 Device (1): Read → Conv1D (1→16) → Write to SHM_LAYER1_INPUT
-  ↓ [PHASE_FORWARD_LAYER1]
-Layer 1 Devices (2,3): Read → Conv1D (16→16 each) → Write to SHM_LAYER2_INPUT (32 channels)
-  ↓ [PHASE_FORWARD_LAYER2]
-Layer 2 Devices (4-6): Read → Conv1D (32→16 each) → Write to SHM_LAYER3_INPUT (48 channels)
-  ↓ [PHASE_FORWARD_LAYER3]
-Layer 3 Devices (7-10): Read → Conv1D (48→16 each) → Write to SHM_LAYER4_INPUT (64 channels)
-  ↓ [Wait for Layer 3]
-Tail (11): Read → Pooling (64→128) → FC (128→12) → Softmax → Loss
-```
+## Building
 
-### Backward Pass (Reverse Sequential Processing)
-```
-Tail (11): Compute Loss Gradient
-  ↓ [PHASE_BACKWARD_LAYER3]
-Tail: FC Backward → Pooling Backward → Write to SHM_GRAD_LAYER3
-Layer 3 Devices (7-10): Read gradients → Conv1D Backward → Write to SHM_GRAD_LAYER2
-  ↓ [PHASE_BACKWARD_LAYER2]
-Layer 2 Devices (4-6): Read gradients → Conv1D Backward → Write to SHM_GRAD_LAYER1
-  ↓ [PHASE_BACKWARD_LAYER1]
-Layer 1 Devices (2,3): Read gradients → Conv1D Backward → Write to SHM_GRAD_LAYER0
-  ↓ [PHASE_BACKWARD_LAYER0]
-Layer 0 Device (1): Read gradients → Conv1D Backward → Update weights
-  ↓ [PHASE_DONE]
-All Devices: Synchronize, prepare for next sample/round
+### Prerequisites
+
+- GCC with C11 support
+- CMake ≥ 3.20
+- POSIX-compliant OS (Linux, WSL) for `shm_open`, `sem_open`, `mmap`
+
+### Build Commands
+
+```bash
+cd PiLot_Distributed
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
 ```
 
-**Key Design**: Pipeline phase coordination with dedicated gradient shared memory segments eliminates deadlock and enables clean sequential processing without threading complexity.
+The output binary is `build/device` — a single executable that runs as head, worker, or tail depending on CLI flags.
 
-## Performance
+---
 
-- **Architecture**: 12 nRF52840 devices with 1→16→32→48→64 channel progression
-- **Processing Model**: Sequential pipeline with phase coordination (no threading overhead)
-- **Parallelism**: Up to 4-way channel parallelism in Layer 3
-- **Throughput**: ~5 seconds per round with 10 training samples
-- **Communication**: Zero-copy shared memory access (POSIX shm, key 0x1234 base)
-- **Synchronization**: Barrier-based pipeline phases eliminate busy-waiting
-- **Memory Efficiency**: All devices operate within 256KB RAM limit
-- **Training**: Full end-to-end distributed learning with proper gradient backpropagation
-- **Scalability**: Easy to add more workers per layer by incrementing num-workers
+## Running
 
-## Extensions
+### Quick Start (Launch Script)
 
-The architecture supports easy extensions:
+```bash
+# From PiLot_Distributed/
+bash scripts/test_distributed.sh
+```
 
-- **More Parallel Workers**: Increase num-workers per layer for wider channels (e.g., 5+6+7+8 workers = 128 channels)
-- **Additional Layers**: Add Layer 4, Layer 5 with corresponding pipeline phases
-- **Larger Datasets**: Scale to full UCR datasets with more training samples
-- **Real Hardware**: Port to actual nRF52840 devices with shared memory via DMA buffers
-- **Optimization**: INT8 quantization, CMSIS-NN kernels, model pruning
-- **Dynamic Topology**: Runtime configuration of worker count per layer
-- **Checkpoint/Resume**: Save/restore model weights and training state
-- **Distributed Inference**: Deploy trained model across devices for inference-only mode
-- **Performance Profiling**: Add timing measurements for each pipeline phase
+This launches all 7 devices with proper ordering and delay.
 
-## Configuration Files
+### Manual Launch (7-Device Pipeline)
 
-The system uses a **single model configuration file**:
+Devices must be launched **in order** to respect shared memory creation dependencies:
 
-- **`configs/model_config_nrf52840_realistic.json`**: Complete CNN architecture definition for all devices
+```bash
+BIN=./build/device
+CFG=configs/model_config.json
 
-Example configuration structure:
+# 1. Head — creates /ipc_tensor_L0
+$BIN --config=$CFG --id=0 --role=head --dataset=Cricket_X &
+sleep 2
+
+# 2. Layer 0, Worker 0 — opens L0, creates L1
+$BIN --config=$CFG --id=1 --role=worker --layer-id=0 --worker-id=0 --num-workers=2 &
+sleep 1
+
+# 3. Layer 0, Worker 1 — opens L0, opens L1
+$BIN --config=$CFG --id=2 --role=worker --layer-id=0 --worker-id=1 --num-workers=2 &
+sleep 2
+
+# 4. Layer 1, Worker 0 — opens L1, creates L2
+$BIN --config=$CFG --id=3 --role=worker --layer-id=1 --worker-id=0 --num-workers=3 &
+sleep 1
+
+# 5. Layer 1, Worker 1 — opens L1, opens L2
+$BIN --config=$CFG --id=4 --role=worker --layer-id=1 --worker-id=1 --num-workers=3 &
+sleep 1
+
+# 6. Layer 1, Worker 2 — opens L1, opens L2
+$BIN --config=$CFG --id=5 --role=worker --layer-id=1 --worker-id=2 --num-workers=3 &
+sleep 2
+
+# 7. Tail — opens L2
+$BIN --config=$CFG --id=6 --role=tail --classes=12 &
+
+wait
+```
+
+### CLI Reference
+
+| Flag | Description | Used By |
+|---|---|---|
+| `--config=<path>` | Path to JSON config file | All |
+| `--id=<N>` | Device ID (0–6) | All |
+| `--role=<head\|worker\|tail>` | Device role | All |
+| `--dataset=<name>` | UCR dataset name | Head |
+| `--classes=<N>` | Number of output classes | Tail |
+| `--layer-id=<N>` | Conv layer index (0, 1) | Worker |
+| `--worker-id=<N>` | Worker index within layer (0-based) | Worker |
+| `--num-workers=<N>` | Total workers in this layer | Worker |
+| `--mem-limit=<bytes>` | Override RAM limit | All |
+| `--debug` | Enable verbose logging | All |
+| `-p` | Enable processing delay simulation (64 MHz) | All |
+
+### Environment Variable
+
+| Variable | Description | Default |
+|---|---|---|
+| `UCR_DATA_ROOT` | Root directory of UCR datasets | `/mnt/d/New folder/UCR_DATASETS` |
+
+---
+
+## Configuration
+
+Generated by the shared `generate_config.py` script:
+
+```bash
+cd PiLot/
+python3 generate_config.py --dataset=Cricket_X --epochs=50
+```
+
+### Distributed Config Structure
+
 ```json
 {
-  "model_name": "nRF52840_UniformCNN",
-  "version": "2.0",
-  "num_classes": 12,
-  "input_length": 300,
+  "model": { "name": "nRF52840_UniformCNN_Cricket_X", "version": "2.0" },
+  "global": {
+    "dataset": "Cricket_X",
+    "epochs": 50,
+    "num_classes": 12,
+    "input_length": 300,
+    "memory_limit_bytes": 262144,
+    "flash_memory_bytes": 1048576,
+    "learning_rate": 0.01
+  },
   "layers": [
     {
-      "id": 0,
-      "type": "conv1d",
-      "in_channels": 1,
-      "out_channels": 16,
-      "kernel_size": 5,
-      "stride": 1,
-      "padding": 2
+      "id": 0, "type": "conv1d",
+      "in_channels": 1, "out_channels": 32,
+      "kernel_size": 5, "stride": 1, "padding": 2,
+      "num_devices": 2,
+      "channels_per_device": 16,
+      "input_length": 300, "output_length": 300,
+      "memory_per_device_bytes": 82096,
+      "ops_per_device": 81600
     },
-    // Additional layers...
+    {
+      "id": 1, "type": "conv1d",
+      "in_channels": 32, "out_channels": 48,
+      "kernel_size": 5, "stride": 2, "padding": 2,
+      "num_devices": 3,
+      "channels_per_device": 16,
+      "input_length": 300, "output_length": 150,
+      "memory_per_device_bytes": 221184,
+      "ops_per_device": 784800
+    },
+    {
+      "id": 2, "type": "fc",
+      "in_features": 96, "out_features": 12,
+      "num_devices": 1,
+      "memory_per_device_bytes": 34272,
+      "ops_per_device": 2304
+    }
   ]
 }
 ```
 
-**All device-specific parameters** (role, layer ID, worker ID) are provided via command-line arguments, making the system flexible and easy to deploy.
-
-## Testing
-
-The system has been tested with:
-
-- **Architecture**: 12-device distributed CNN (1→16→32→48→64 channels)
-- **Dataset**: Cricket_X from UCR archive (10 train samples, 12 classes, 300 time points)
-- **Communication**: POSIX shared memory (zero-copy, high-performance IPC)
-- **Training**: 200 rounds configured, tested through 40+ rounds successfully
-- **Processing**: Sequential pipeline with phase coordination
-- **Memory**: All 12 devices remain within 256KB nRF52840 constraint
-- **Throughput**: ~5 seconds per round (10 samples)
-
-Verified functionality:
-- ✅ Pipeline phase coordination (PHASE_FORWARD_LAYER0-3, PHASE_BACKWARD_LAYER0-3)
-- ✅ 12-device layer-wise distribution with parallel channel processing  
-- ✅ Sequential forward propagation through all layers
-- ✅ Backward gradient flow with dedicated shared memory segments
-- ✅ 4-way parallel channel processing in Layer 3
-- ✅ Explicit gradient layer mapping (switch-case enum translation)
-- ✅ Complete training loop with proper backpropagation
-- ✅ Automatic shared memory cleanup on exit
-- ✅ No threading race conditions or synchronization issues
-- ✅ Memory constraints maintained throughout training
-
-## Key Achievements
-
-- ✅ **12-device distributed CNN** with 1→16→32→48→64 channel progression
-- ✅ **Pipeline phase coordination** for clean sequential processing (no threading)
-- ✅ **Pure shared memory communication** (POSIX shm, zero-copy, high-performance)
-- ✅ **Dedicated gradient segments** prevent deadlock (SHM_GRAD_LAYER0-3)
-- ✅ **Single binary deployment** configured via command-line arguments
-- ✅ **Bidirectional gradient flow** with proper backpropagation through all layers
-- ✅ **Memory-constrained operation** (256KB per device, nRF52840 target)
-- ✅ **Parallel channel processing** with up to 4-way parallelism
-- ✅ **Automatic cleanup** of shared memory segments on exit
-- ✅ **Production-tested** through 40+ training rounds successfully
+Key differences from centralized config:
+- `memory_limit_bytes` = 262144 (256 KB — enforced via `sim_malloc`)
+- `flash_memory_bytes` = 1048576 (1 MB — for dataset storage)
+- Each layer has `num_devices`, `channels_per_device`, `memory_per_device_bytes`, `ops_per_device`
 
 ---
 
-## Summary
+## Training Features
 
-This implementation provides a **production-ready foundation** for deploying distributed neural networks on resource-constrained embedded devices using **shared memory communication**. The **pipeline phase coordination architecture** eliminates threading complexity while maintaining efficient distributed processing across **12 devices**.
+### Optimizer: AdamW (Per-Device)
 
-**Target Hardware**: nRF52840 microcontrollers (64MHz ARM Cortex-M4, 256KB RAM, 1MB Flash)  
-**Network Architecture**: 4-layer CNN with 1→16→32→48→64 channel progression  
-**Key Innovation**: Sequential pipeline processing with phase-based coordination eliminates deadlock and threading overhead  
-**Communication**: Pure POSIX shared memory (zero-copy, high-performance IPC)  
-**Real-World Ready**: Memory constraints, barrier synchronization, and distributed processing match actual embedded deployment scenarios
+Each device independently maintains AdamW state for its own parameters:
 
-### Recent Updates (February 2026)
+- **β₁** = 0.9, **β₂** = 0.999, **ε** = 1e-8
+- **Weight decay** = 0.0003 (decoupled)
+- Bias updated **without** weight decay
+- Adam timestep tracked per-device
 
-- **Threading Architecture Refactor**: Replaced dual-threaded workers with sequential processing + pipeline coordination
-- **Gradient Segment Fix**: Explicit switch-case enum mapping for gradient shared memory (fixes layer 16 error)
-- **Test Infrastructure**: Comprehensive `test_distributed.sh` script for easy 12-device testing
-- **Shared Memory Management**: Automatic cleanup with proper signal handling (SIGINT, SIGTERM)
-- **Validation**: System tested through 40+ rounds, ~5 seconds per round throughput
+### Learning Rate Schedule: Cosine Annealing
+
+- Epoch detection via `is_testing` flag transitions in shared memory
+- **Warmup**: 3 epochs linear ramp
+- **Cosine**: T_max = 60, η_min = 1e-5
+- Same schedule on all devices (synchronized via shared epoch counter)
+
+### Gradient Clipping
+
+- L2-norm clipping at `max_norm = 5.0`
+- Applied on each device to its own parameter gradients before the AdamW step
+
+### Early Stopping (Tail Only)
+
+- **Patience** = 50 epochs
+- Tail tracks test accuracy and saves best FC weights
+- On trigger: FC weight updates frozen, but gradients still propagated so conv workers continue adapting
+
+### Data Augmentation (Head Only, Training)
+
+| Transform | Probability | Parameters |
+|---|---|---|
+| Jitter | 100% | Gaussian noise, σ = 0.03 |
+| Scaling | 70% | Uniform factor in [0.85, 1.15] |
+| Magnitude Warp | 50% | 4-knot spline, σ = 0.15 |
+| Time Shift | 30% | Circular shift, max ± 10 steps |
+
+### Processing Delay Simulation
+
+With the `-p` flag, each device simulates Cortex-M4F execution time:
+
+```
+delay = FLOPs / 64,000,000 Hz
+```
+
+Forward pass uses the actual convolution FLOP count; backward pass uses 4× forward FLOPs.
+
+---
+
+## Memory Model
+
+### RAM vs Flash Separation
+
+The nRF52840 has 256 KB RAM and 1 MB flash. PiLot enforces this at the simulation level:
+
+| Memory Type | Allocation API | Budget | Contents |
+|---|---|---|---|
+| **RAM** | `sim_malloc()` | 256 KB | Conv weights, bias, activations, gradients, optimizer state |
+| **Flash** | `malloc()` | 1 MB | Dataset samples and labels (head device only) |
+
+`sim_malloc()` is a tracking allocator that enforces the 256 KB limit and reports peak usage. Exceeding the limit causes the device to abort with an error.
+
+### Per-Device RAM Breakdown (Layer 1 Worker)
+
+```
+Conv weights: 32 × 16 × 5 × 4 bytes          =  10,240 B
+Conv bias:    16 × 4 bytes                     =      64 B
+Adam m_w:     10,240 B
+Adam v_w:     10,240 B
+Adam m_b:         64 B
+Adam v_b:         64 B
+Grad weights: 10,240 B
+Grad bias:        64 B
+─────────────────────────────────────────────────
+Subtotal (params + optimizer):                   41,216 B
+
+Forward tensors (input + conv_out + gn + relu):  ~76,800 B
+Backward tensors (4 gradient buffers):           ~76,800 B
+GroupNorm intermediates:                         ~19,200 B
+─────────────────────────────────────────────────
+Total estimated:                                ~214,016 B (fits in 256 KB)
+```
+
+---
+
+## Supported Datasets
+
+The system supports 27 UCR Time Series Archive datasets. Generate configs for any:
+
+```bash
+python3 generate_config.py --dataset=ECG5000 --epochs=100
+python3 generate_config.py --list-datasets   # Show all supported
+```
+
+| Dataset | Length | Classes | | Dataset | Length | Classes |
+|---|---|---|---|---|---|---|
+| Coffee | 286 | 2 | | GunPoint | 150 | 2 |
+| ECG5000 | 140 | 5 | | FaceAll | 131 | 14 |
+| Cricket_X | 300 | 12 | | Wafer | 152 | 2 |
+| ElectricDevices | 96 | 7 | | StarLightCurves | 1024 | 3 |
+| FordA | 500 | 2 | | TwoPatterns | 128 | 4 |
+
+---
+
+## Example Output
+
+### Head Device
+```
+[INFO] Starting Head Device 0 (Data Feeder)
+[INFO] RAM limit: 262144 bytes (256 KB) per device
+[INFO] Flash memory: 1048576 bytes (1024 KB) per device
+[INFO] Dataset stored in flash: 457 KB (data) + 2 KB (labels)
+[INFO] Loaded 390 train + 390 test samples (Cricket_X)
+[INFO] Created shared memory /ipc_tensor_L0 (size 2408)
+[INFO] Head: Starting epoch 1 (390 train + 390 test samples)
+```
+
+### Tail Device (Epoch Summary)
+```
+[INFO] ════════════════════════════════════════════════════
+[INFO] EPOCH 49 COMPLETE
+[INFO]   Train Accuracy: 57.69% (225/390)
+[INFO]   Test  Accuracy: 61.79% (241/390)
+[INFO]   Avg Test Loss:  1.3842
+[INFO]   Avg Inference:  0.042 ms
+[INFO]   Elapsed:        89.3s
+[INFO]   RSS Memory:     4284 KB
+[INFO]   ** New best: 61.79% at epoch 49
+[INFO] ════════════════════════════════════════════════════
+```
+
+---
+
+## Known Limitations
+
+1. **Pipeline drain at termination**: When the head finishes all epochs and exits, the tail may hang waiting for one more `fwd_sem` post. Use `kill` or Ctrl+C to terminate remaining processes.
+
+2. **Launch ordering**: Devices must start in the correct order with delays to ensure shared memory creation precedes open. The launch script handles this automatically.
+
+3. **No checkpoint persistence**: Best weights are kept in-memory during training but not saved to disk. Restarting requires re-training.
+
+4. **Single-sample pipeline**: The pipeline processes one sample at a time (no mini-batching across the pipeline). This maximizes memory efficiency but means pipeline throughput is limited by the slowest device.
