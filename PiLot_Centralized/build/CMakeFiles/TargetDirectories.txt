@@ -1,0 +1,3 @@
+/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles/pilot_centralized.dir
+/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles/edit_cache.dir
+/mnt/c/Users/Lakhv/Desktop/PiLot/PiLot_Centralized/build/CMakeFiles/rebuild_cache.dir
