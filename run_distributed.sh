@@ -130,7 +130,22 @@ wait $HEAD_PID
 HEAD_EXIT=$?
 
 echo ""
-echo "=== Head exited (code $HEAD_EXIT) — waiting for pipeline to drain ==="
+echo "=== Head exited (code $HEAD_EXIT) — sending SIGTERM to workers/tail ==="
+
+# Give pipeline 3 seconds to drain naturally, then force-terminate
+sleep 3
+
+# Send SIGTERM to all child processes so workers/tail exit their sem_wait loops
+pkill -TERM -P $$ 2>/dev/null || true
+
+# Wait for graceful shutdown (max 5 seconds)
+for i in $(seq 1 10); do
+    if ! jobs -r | grep -q .; then break; fi
+    sleep 0.5
+done
+
+# Force-kill anything still alive
+pkill -KILL -P $$ 2>/dev/null || true
 wait 2>/dev/null || true
 
 echo ""
