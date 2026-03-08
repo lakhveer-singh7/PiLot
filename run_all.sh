@@ -79,6 +79,9 @@ for DS in "${DATASETS[@]}"; do
     echo "  Dataset: $DS"
     echo "######################################################"
     
+    # --- Create result directories upfront ---
+    mkdir -p "results/${DS}/centralized" "results/${DS}/distributed"
+
     # --- Centralized ---
     echo ""
     echo ">>> Running Centralized on $DS ..."
