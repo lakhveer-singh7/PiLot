@@ -16,6 +16,7 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <sys/resource.h>
 
 /* ---- Forward declarations from ucr_loader.c ---- */
 typedef struct {
@@ -321,7 +322,7 @@ int main(int argc, char* argv[]) {
     /* Early stopping */
     float best_test_acc = 0.0f;
     int   best_epoch = 0;
-    int   patience = 50;
+    int   patience = 30;
     int   no_improve = 0;
     float* best_fc_w = (float*)malloc((size_t)fc->weights_size);
     float* best_fc_b = (float*)malloc((size_t)fc->bias_size);
@@ -509,6 +510,16 @@ int main(int argc, char* argv[]) {
                  avg_loss,
                  lr_cosine_annealing(cfg->learning_rate, epoch, 60, 1e-5f),
                  avg_infer_ms, elapsed);
+
+        /* Standardized metrics line for automated parsing */
+        {
+            struct rusage usage;
+            getrusage(RUSAGE_SELF, &usage);
+            long mem_kb = usage.ru_maxrss;
+            log_info("[METRICS] Epoch=%d | Timespan=%.1fs | Train_Acc=%.2f%% | "
+                     "Test_Acc=%.2f%% | Infer_Latency=%.3fms | Memory=%ldKB",
+                     epoch, elapsed, train_acc, test_acc, avg_infer_ms, mem_kb);
+        }
 
         /* ---- Early stopping ---- */
         if (test_acc > best_test_acc) {

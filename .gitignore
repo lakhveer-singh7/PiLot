@@ -1,0 +1,22 @@
+# Build artifacts
+**/build/
+*.o
+*.a
+*.so
+*.exe
+
+# Results & logs (generated at runtime)
+results/
+logs/
+
+# Editor / OS files
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc

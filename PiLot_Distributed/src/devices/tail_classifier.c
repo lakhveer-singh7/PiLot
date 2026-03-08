@@ -185,7 +185,7 @@ int run_tail_device(int device_id, int num_classes) {
     // --- Early Stopping ---
     float best_test_acc = 0.0f;
     int best_epoch = 0;
-    int patience = 50;           // Stop after 50 epochs with no improvement
+    int patience = 30;           // Stop after 30 epochs with no improvement
     int epochs_without_improve = 0;
     int early_stopped = 0;
     // Save best weights for restoring

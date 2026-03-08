@@ -282,7 +282,9 @@ static void shuffle_dataset(dataset_t* ds) {
         if (train_rounds > 0) {
             sem_wait(bwd_sem);
         }
+        struct timespec test_phase_start, test_phase_end;
         if(do_testing){
+            clock_gettime(CLOCK_MONOTONIC, &test_phase_start);
             for(int round = 0;round<test_rounds; round++){
                 log_info("Round %d: Testing sample %d/%d", round + 1, round + 1, test_rounds);
                 tensor_t* sample = get_dataset_sample(test_dataset, round);
@@ -317,6 +319,12 @@ static void shuffle_dataset(dataset_t* ds) {
         // Wait for pipeline to finish the last test sample before next epoch
         if (do_testing && test_rounds > 0) {
             sem_wait(bwd_sem);
+            clock_gettime(CLOCK_MONOTONIC, &test_phase_end);
+            double test_phase_time = (test_phase_end.tv_sec - test_phase_start.tv_sec)
+                                   + (test_phase_end.tv_nsec - test_phase_start.tv_nsec) / 1e9;
+            double avg_pipeline_ms = (test_rounds > 0) ? test_phase_time / test_rounds * 1000.0 : 0.0;
+            log_info("[HEAD_METRICS] Epoch=%d | Pipeline_Infer_Latency=%.3fms | Test_Samples=%d | Total_Test_Time=%.3fs",
+                     epoch_num, avg_pipeline_ms, test_rounds, test_phase_time);
         }
         epochs--;
         
