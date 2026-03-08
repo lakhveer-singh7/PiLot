@@ -1,0 +1,4 @@
+dataset,centralized_kb,distributed_avg_kb,distributed_std_kb
+Cricket_X,3328,126.52,10.31
+ECG5000,4864,72.27,16.13
+FaceAll,3584,69.33,16.56
