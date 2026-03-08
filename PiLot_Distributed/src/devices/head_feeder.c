@@ -238,7 +238,6 @@ static void shuffle_dataset(dataset_t* ds) {
     int test_rounds = test_dataset->num_samples;
     int epochs = (g_model_config && g_model_config->epochs > 0) ? g_model_config->epochs : 100;
     int epoch_num = 0;
-    int dataset_idx = 0;
     int do_testing = 1;
     while (epochs > 0) {
         epoch_num++;
