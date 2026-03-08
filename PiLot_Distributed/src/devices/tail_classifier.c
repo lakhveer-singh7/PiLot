@@ -217,7 +217,6 @@ int run_tail_device(int device_id, int num_classes) {
     float test_loss_sum = 0.0f;
     int round = 1;
     while (!g_tail_shutdown) {
-        log_info("Tail: Processing sample %d", round);
         if (sem_wait(fwd_sem) < 0) {
             if (errno == EINTR) continue;
             break;
@@ -230,9 +229,6 @@ int run_tail_device(int device_id, int num_classes) {
             clock_gettime(CLOCK_MONOTONIC, &test_sample_start);
         }
         
-        log_info("input[0-4]: %.4f %.4f %.4f %.4f %.4f", 
-                 input_tensor.data[0], input_tensor.data[1], input_tensor.data[2],
-                 input_tensor.data[3], input_tensor.data[4]);
         // Forward pass: Pool → Dropout → FC → Softmax
         dual_pooling1d(&input_tensor, &pooled_tensor);
         
@@ -247,16 +243,6 @@ int run_tail_device(int device_id, int num_classes) {
 
         int label = shm_tensor->label;  // from shared memory
         float loss = cross_entropy_loss(&prob_tensor, &label, 1);
-        log_info("Loss = %f", loss);
-        if (num_classes >= 10) {
-            log_info("prob[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
-                     prob_tensor.data[0], prob_tensor.data[1], prob_tensor.data[2],
-                     prob_tensor.data[3], prob_tensor.data[4], prob_tensor.data[5],
-                     prob_tensor.data[6], prob_tensor.data[7], prob_tensor.data[8],
-                     prob_tensor.data[9]);
-        } else {
-            log_info("prob (first %d classes): %.4f ...", num_classes, prob_tensor.data[0]);
-        }
         
         // Backward pass
         int is_testing = shm_tensor->is_testing;
@@ -356,20 +342,7 @@ int run_tail_device(int device_id, int num_classes) {
                 dropout_backward(&grad_pooled, dropout_mask, &grad_dropout);
                 dual_pooling1d_backward(&grad_dropout, &input_tensor, &grad_input);
             }
-            if (num_weights >= 10) {
-                log_info("weights[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
-                         fc_config->weights[0], fc_config->weights[1], fc_config->weights[2],
-                         fc_config->weights[3], fc_config->weights[4], fc_config->weights[5],
-                         fc_config->weights[6], fc_config->weights[7], fc_config->weights[8],
-                         fc_config->weights[9]);
-            }
-            if (num_biases >= 10) {
-                log_info("bias[0-9]: %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", 
-                         fc_config->bias[0], fc_config->bias[1], fc_config->bias[2],
-                         fc_config->bias[3], fc_config->bias[4], fc_config->bias[5],
-                         fc_config->bias[6], fc_config->bias[7], fc_config->bias[8],
-                         fc_config->bias[9]);
-            }
+
            
             memcpy(grad_buffer, grad_input.data, sizeof(float) * in_channels * input_length);
 
@@ -386,8 +359,10 @@ int run_tail_device(int device_id, int num_classes) {
             test_loss_sum += loss;
             test_infer_time_sum += sample_infer_s;
             test_infer_count++;
-            log_info("Testing sample %d: True label=%d, Predicted=%d, Loss=%.4f, Accuracy=%.2f%%",
-                     round, label, predicted_label, loss, (float)correct / total * 100.0f);
+            if (total % 50 == 0 || total == 1) {
+                log_info("Testing sample %d/%d: Predicted=%d (True=%d), Acc=%.2f%%",
+                         total, round, predicted_label, label, (float)correct / total * 100.0f);
+            }
         }
         
         for (int w = 0; w < num_workers_prev_layer; w++) {

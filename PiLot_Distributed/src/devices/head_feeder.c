@@ -245,7 +245,6 @@ static void shuffle_dataset(dataset_t* ds) {
         log_info("Starting epoch %d", epoch_num);
         shuffle_dataset(train_dataset);
         for(int round = 0;round<train_rounds; round++){
-            log_info("Round %d: Training sample %d/%d", round + 1, round + 1, train_rounds);
             tensor_t* sample = get_dataset_sample(train_dataset, round);
             int label = get_dataset_label(train_dataset, round);
             if (round > 0) {
@@ -270,11 +269,6 @@ static void shuffle_dataset(dataset_t* ds) {
                 sem_post(fwd_sem);
         
 
-            log_info("Head: Sample %d (dataset[%d]), Label=%d, Input[0-4]: %.4f %.4f %.4f %.4f %.4f",
-                 round + 1, dataset_idx, label,
-                 aug_buffer[0], aug_buffer[1], aug_buffer[2],
-                 aug_buffer[3], aug_buffer[4]);
-
             tensor_free(sample);   
         }
 
@@ -286,7 +280,6 @@ static void shuffle_dataset(dataset_t* ds) {
         if(do_testing){
             clock_gettime(CLOCK_MONOTONIC, &test_phase_start);
             for(int round = 0;round<test_rounds; round++){
-                log_info("Round %d: Testing sample %d/%d", round + 1, round + 1, test_rounds);
                 tensor_t* sample = get_dataset_sample(test_dataset, round);
                 int label = get_dataset_label(test_dataset, round);
                 if (round > 0) {
@@ -307,11 +300,6 @@ static void shuffle_dataset(dataset_t* ds) {
                 for(int w =0; w < num_layer0_workers; w++) 
                     sem_post(fwd_sem);
         
-
-                log_info("Head: Sample %d (dataset[%d]), Label=%d, Input[0-4]: %.4f %.4f %.4f %.4f %.4f",
-                    round + 1, dataset_idx, label,
-                    sample->data[0], sample->data[1], sample->data[2],
-                    sample->data[3], sample->data[4]);
 
                 tensor_free(sample);   
             }

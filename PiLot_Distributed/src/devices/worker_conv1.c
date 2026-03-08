@@ -229,7 +229,6 @@ int run_worker_device(int device_id) {
     log_info("starting round loop...............");
     int round = 1;
     while (!g_worker_shutdown) {
-        log_info("Worker %d (Layer %d): Starting round %d", device_id, layer_id, round);
         if (worker_id == 0) {
             memset(grad_output_buffer, 0,sizeof(float) * in_channels * input_length); // Clear backward gradient buffer for this new sample
             __sync_synchronize();
@@ -241,11 +240,6 @@ int run_worker_device(int device_id) {
             break;
         }
         // log_info("Worker %d (Layer %d): Detected sample %d ready", device_id, layer_id, round);
-        log_info("Worker %d (Layer %d): Input[0-4]: %.4f %.4f %.4f %.4f %.4f",
-                 device_id, layer_id, round,
-                 input_tensor.data[0], input_tensor.data[1],
-                 input_tensor.data[2], input_tensor.data[3],
-                 input_tensor.data[4]);
         memset(grad_weights, 0, conv_config->weights_size);
         memset(grad_bias, 0, conv_config->bias_size);
 
@@ -259,13 +253,6 @@ int run_worker_device(int device_id) {
         group_norm_forward(&conv_out, &gn_pre_relu, num_groups);
         relu_forward(&gn_pre_relu, &gn_out);
         
-
-        // Log output data produced
-        log_info("Worker %d (Layer %d): Sample %d, Output[0-4]: %.4f %.4f %.4f %.4f %.4f",
-                 device_id, layer_id, round,
-                 gn_out.data[0], gn_out.data[1],
-                 gn_out.data[2], gn_out.data[3],
-                 gn_out.data[4]);
 
         // Write output to next layer's shared memory at the correct offset
         next_shm->is_testing = prev_shm->is_testing; // Pass along training/testing flag
@@ -300,21 +287,10 @@ int run_worker_device(int device_id) {
         if(!is_testing){
             float* grad_ptr = grad_input_buffer + worker_id * worker_out_channels * output_length;
             memcpy(grad_out.data,grad_ptr,sizeof(float) * worker_out_channels * output_length);
-            log_info("Worker %d (Layer %d): Sample %d, Grad Input[0-4]: %.4f %.4f %.4f %.4f %.4f",
-                     device_id, layer_id, round,
-                     grad_out.data[0], grad_out.data[1],
-                     grad_out.data[2], grad_out.data[3],
-                     grad_out.data[4]);
             // relu_backward(&grad_out, &conv_out, &grad_gn);
             // conv1d_backward(&grad_gn,&input_tensor,conv_config,&grad_input,grad_weights,grad_bias);
             relu_backward(&grad_out, &gn_pre_relu, &grad_gn);
-            log_info("relu output[0-4]: %.4f %.4f %.4f %.4f %.4f", 
-                     gn_pre_relu.data[0], gn_pre_relu.data[1], gn_pre_relu.data[2],
-                     gn_pre_relu.data[3], gn_pre_relu.data[4]);
             group_norm_backward(&conv_out, &grad_gn, &grad_conv, num_groups);
-            log_info("gn backward output[0-4]: %.4f %.4f %.4f %.4f %.4f", 
-                     grad_conv.data[0], grad_conv.data[1], grad_conv.data[2],
-                     grad_conv.data[3], grad_conv.data[4]);
             conv1d_backward(&grad_conv,&input_tensor,conv_config,&grad_input,grad_weights,grad_bias);
             // Processing constraint: backward ≈ 2× forward FLOPs
             proc_delay_flops(4L * worker_out_channels * in_channels * kernel_size * output_length);
@@ -329,17 +305,6 @@ int run_worker_device(int device_id) {
             adam_timestep++;
             adam_update(conv_config->weights, grad_weights, m_weights, v_weights, num_w, lr, adam_beta1, adam_beta2, adam_eps, adam_timestep, weight_decay);
             adam_update_bias(conv_config->bias, grad_bias, m_bias, v_bias, num_b, lr, adam_beta1, adam_beta2, adam_eps, adam_timestep);
-            log_info("weights[0-4]: %.4f %.4f %.4f %.4f %.4f", 
-                     conv_config->weights[0], conv_config->weights[1], conv_config->weights[2],
-                     conv_config->weights[3], conv_config->weights[4]);
-            log_info("bias[0-4]: %.4f %.4f %.4f %.4f %.4f", 
-                     conv_config->bias[0], conv_config->bias[1], conv_config->bias[2],
-                     conv_config->bias[3], conv_config->bias[4]);
-            log_info("Worker %d (Layer %d): Sample %d, Grad Output[0-4]: %.4f %.4f %.4f %.4f %.4f",
-                     device_id, layer_id, round,
-                     grad_input.data[0], grad_input.data[1],
-                     grad_input.data[2], grad_input.data[3],
-                     grad_input.data[4]);
             // Write gradients back to previous layer's shared memory (atomic for multi-worker safety)
             float* prev_grad_ptr = grad_output_buffer;
             for (int i = 0; i < in_channels * input_length; i++) {
