@@ -125,13 +125,9 @@ echo "Tailing tail log (Ctrl+C to stop)..."
 echo "==========================================="
 echo ""
 
-# ---- Monitor ----
-tail -f "$LOG_DIR/device_06_tail.log" 2>/dev/null &
-TAIL_LOG_PID=$!
-
+# ---- Wait for head to finish (all logs go to stderr → captured by tee in run_all.sh) ----
 wait $HEAD_PID
 HEAD_EXIT=$?
-kill $TAIL_LOG_PID 2>/dev/null || true
 
 echo ""
 echo "=== Head exited (code $HEAD_EXIT) — waiting for pipeline to drain ==="

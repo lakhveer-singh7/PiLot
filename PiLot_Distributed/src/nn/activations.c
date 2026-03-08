@@ -80,7 +80,6 @@ void relu_backward(const tensor_t* grad_output, const tensor_t* input, tensor_t*
     for (int i = 0; i < total_elements; i++) {
         grad_input->data[i] = input->data[i] > 0.0f ? grad_output->data[i] : 0.01f * grad_output->data[i]; // Gradient through Leaky ReLU
     }
-    log_info("ReLu backward done..................");
 }
 
 void softmax_forward(tensor_t* input, tensor_t* output) {

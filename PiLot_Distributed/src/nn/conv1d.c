@@ -247,13 +247,11 @@ void group_norm_forward(tensor_t* input, tensor_t* output, int num_groups) {
 
 
 void group_norm_backward(const tensor_t* input,const tensor_t* grad_output,tensor_t* grad_input,int num_groups) {
-    log_info("Group norm backward: num_groups=%d", num_groups);
     if (!input || !grad_output || !grad_input ||
         !input->data || !grad_output->data || !grad_input->data) {
         log_error("Invalid tensors for group_norm_backward");
         return;
     }
-    log_info("Group norm backward: num_groups=%d", num_groups);
     int B = input->batch_size;
     int C = input->channels;
     int L = input->length;
@@ -267,9 +265,7 @@ void group_norm_backward(const tensor_t* input,const tensor_t* grad_output,tenso
     int CpG = C / G;              // channels per group
     int N = CpG * L;              // elements per group
     const float eps = 1e-5f;
-    log_info("Group norm backward: B=%d, C=%d, L=%d, G=%d, CpG=%d", B, C, L, G, CpG);
     tensor_fill_zeros(grad_input);
-    log_info("Group norm backward: B=%d, C=%d, L=%d, G=%d, CpG=%d", B, C, L, G, CpG);
     for (int b = 0; b < B; b++) {
         const float* x     = input->data + b * C * L;
         const float* dy    = grad_output->data + b * C * L;
@@ -330,7 +326,6 @@ void group_norm_backward(const tensor_t* input,const tensor_t* grad_output,tenso
         }
     }
 
-    log_info("Group norm backward done..................");
 }
 
 

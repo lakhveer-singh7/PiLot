@@ -294,9 +294,6 @@ int run_worker_device(int device_id) {
             conv1d_backward(&grad_conv,&input_tensor,conv_config,&grad_input,grad_weights,grad_bias);
             // Processing constraint: backward ≈ 2× forward FLOPs
             proc_delay_flops(4L * worker_out_channels * in_channels * kernel_size * output_length);
-            log_info("conv backward output[0-4]: %.4f %.4f %.4f %.4f %.4f", 
-                     grad_input.data[0], grad_input.data[1], grad_input.data[2],
-                     grad_input.data[3], grad_input.data[4]);
             clip_gradients(grad_weights, num_w, 5.0f);
             clip_gradients(grad_bias, num_b, 5.0f);
             // Adam optimizer with cosine annealing LR
