@@ -22,8 +22,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Ensure UCR_DATA_ROOT is set (default: parent directory of PiLot/)
-export UCR_DATA_ROOT="${UCR_DATA_ROOT:-$(dirname "$SCRIPT_DIR")}"
+# Ensure UCR_DATA_ROOT is set (default: datasets/ inside the repo)
+export UCR_DATA_ROOT="${UCR_DATA_ROOT:-$SCRIPT_DIR/datasets}"
 
 DATASETS=("Cricket_X" "ECG5000" "FaceAll")
 

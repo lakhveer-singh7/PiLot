@@ -26,8 +26,8 @@ if [[ ! -f "$CONFIG" ]]; then
     exit 1
 fi
 
-# Set UCR data root (parent directory containing dataset folders)
-export UCR_DATA_ROOT="${UCR_DATA_ROOT:-$SCRIPT_DIR}"
+# Set UCR data root (datasets/ inside the repo)
+export UCR_DATA_ROOT="${UCR_DATA_ROOT:-$SCRIPT_DIR/datasets}"
 
 # ---- Build ----
 echo "=== Building PiLot Centralized ==="

@@ -30,8 +30,8 @@ BIN="$BUILD_DIR/device"
 CONFIG="$PROJECT_DIR/configs/config_${DATASET}.json"
 LOG_DIR="$SCRIPT_DIR/results/${DATASET}/distributed"
 
-# Set UCR data root
-export UCR_DATA_ROOT="${UCR_DATA_ROOT:-$SCRIPT_DIR}"
+# Set UCR data root (datasets/ inside the repo)
+export UCR_DATA_ROOT="${UCR_DATA_ROOT:-$SCRIPT_DIR/datasets}"
 
 # Validate config exists
 if [[ ! -f "$CONFIG" ]]; then
