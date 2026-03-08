@@ -39,7 +39,7 @@ int run_worker_device(int device_id) {
     int next_layer_num_workers = g_model_config->layers[layer_id + 1].num_devices;
     // Get layer parameters from model config
     int in_channels = 16;  // Default input channels (from previous layer)  
-    int worker_out_channels = 16;  // Each worker outputs 16 channels (uniform)
+    int worker_out_channels = 16;  // Default per-worker output channels
     int out_channels = worker_out_channels * num_workers; // Total output channels for this layer
     int kernel_size = 5;
     int stride = 1; 
@@ -54,6 +54,8 @@ int run_worker_device(int device_id) {
         // Total output channels for layer divided by number of workers
         out_channels = g_model_config->layers[layer_id].out_channels;
         in_channels = g_model_config->layers[layer_id].in_channels;
+        // Compute per-worker output channels from total / workers
+        worker_out_channels = out_channels / num_workers;
     }
     
     log_info("Worker configuration: Layer %d, Worker %d/%d, Conv1D %d→%d channels (kernel=%d, stride=%d, padding=%d)",
