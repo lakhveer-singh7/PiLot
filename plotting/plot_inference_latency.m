@@ -5,32 +5,43 @@
 %
 %  Reads: results/csv/inference_latency.csv
 %  Format: dataset, centralized_ms, distributed_ms
+%
+%  Compatible with both MATLAB and GNU Octave.
 
 clear; clc; close all;
+graphics_toolkit('gnuplot');
+setenv('GNUTERM', 'dumb');
+warning('off', 'all');
 
 csv_file = fullfile('..', 'results', 'csv', 'inference_latency.csv');
 
-if ~isfile(csv_file)
+if ~exist(csv_file, 'file')
     error('CSV file not found: %s\nRun parse_results.py first.', csv_file);
 end
 
-T = readtable(csv_file);
-n = height(T);
+% Read CSV (skip header): col1=dataset(text), col2=centralized_ms, col3=distributed_ms
+fid = fopen(csv_file, 'r');
+header = fgetl(fid);  % skip header
+raw = textscan(fid, '%s%f%f', 'Delimiter', ',');
+fclose(fid);
 
-% Prepare data matrix: rows = datasets, cols = [centralized, distributed]
-data = [T.centralized_ms, T.distributed_ms];
-ds_labels = T.dataset;
+ds_labels = raw{1};
+cent_ms   = raw{2};
+dist_ms   = raw{3};
+n = numel(ds_labels);
 
-% Clean up dataset names for display
 for i = 1:n
     ds_labels{i} = strrep(ds_labels{i}, '_', '\_');
 end
 
-figure('Name', 'Inference Latency Comparison', 'Position', [150, 150, 800, 550]);
+data = [cent_ms, dist_ms];
+
+hf = figure();
+set(hf, 'PaperPositionMode', 'auto', 'Position', [150, 150, 800, 550]);
 
 b = bar(data, 'grouped');
-b(1).FaceColor = [0.2, 0.4, 0.8];   % Blue for centralized
-b(2).FaceColor = [0.85, 0.25, 0.1];  % Red for distributed
+set(b(1), 'FaceColor', [0.2, 0.4, 0.8]);   % Blue for centralized
+set(b(2), 'FaceColor', [0.85, 0.25, 0.1]);  % Red for distributed
 
 set(gca, 'XTickLabel', ds_labels, 'FontSize', 12);
 xlabel('Dataset', 'FontSize', 13, 'FontWeight', 'bold');
@@ -42,16 +53,19 @@ legend({'Centralized (Computation only)', ...
        'Location', 'northwest', 'FontSize', 11);
 grid on;
 
-% Add value labels on top of bars
-for i = 1:length(b)
-    xtips = b(i).XEndPoints;
-    ytips = b(i).YEndPoints;
-    labels = arrayfun(@(v) sprintf('%.2f', v), ytips, 'UniformOutput', false);
-    text(xtips, ytips, labels, 'HorizontalAlignment', 'center', ...
-         'VerticalAlignment', 'bottom', 'FontSize', 10, 'FontWeight', 'bold');
+% Value labels on bars (Octave-compatible positioning)
+for i = 1:n
+    % Centralized bar (left of center)
+    text(i - 0.14, cent_ms(i) + 0.15, sprintf('%.2f', cent_ms(i)), ...
+         'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
+         'FontSize', 10, 'FontWeight', 'bold');
+    % Distributed bar (right of center)
+    text(i + 0.14, dist_ms(i) + 0.15, sprintf('%.2f', dist_ms(i)), ...
+         'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom', ...
+         'FontSize', 10, 'FontWeight', 'bold');
 end
 
-% Save
-saveas(gcf, fullfile('..', 'results', 'inference_latency.png'));
-saveas(gcf, fullfile('..', 'results', 'inference_latency.fig'));
-fprintf('Saved: inference_latency.png\n');
+out_png = fullfile('..', 'results', 'inference_latency.png');
+print(hf, out_png, '-dpng', '-r200');
+close(hf);
+fprintf('Saved: %s\n', out_png);
