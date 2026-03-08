@@ -239,8 +239,15 @@ static void shuffle_dataset(dataset_t* ds) {
     int epochs = (g_model_config && g_model_config->epochs > 0) ? g_model_config->epochs : 100;
     int epoch_num = 0;
     int do_testing = 1;
+    // Clean up any stale early stop flag from previous runs
+    unlink("/tmp/ipc_early_stop");
     while (epochs > 0) {
         epoch_num++;
+        // Check if tail triggered early stopping
+        if (access("/tmp/ipc_early_stop", F_OK) == 0) {
+            log_info("Head: Early stop signal received from tail at epoch %d, ending training", epoch_num);
+            break;
+        }
         log_info("Starting epoch %d", epoch_num);
         shuffle_dataset(train_dataset);
         for(int round = 0;round<train_rounds; round++){

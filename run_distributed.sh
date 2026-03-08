@@ -56,7 +56,7 @@ fi
 cleanup() {
     echo ""
     echo "Cleaning up IPC resources..."
-    rm -f /dev/shm/sem.ipc_sem_L* /dev/shm/ipc_tensor_L* 2>/dev/null
+    rm -f /dev/shm/sem.ipc_sem_L* /dev/shm/ipc_tensor_L* /tmp/ipc_early_stop 2>/dev/null
     pkill -P $$ 2>/dev/null || true
     wait 2>/dev/null || true
     echo "Cleanup complete."

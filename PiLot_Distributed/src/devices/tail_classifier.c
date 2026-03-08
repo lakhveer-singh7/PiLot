@@ -298,7 +298,10 @@ int run_tail_device(int device_id, int num_classes) {
                 log_info("[EARLY_STOP] *** EARLY STOPPING TRIGGERED at epoch %d ***", current_epoch);
                 log_info("[EARLY_STOP] Restored best weights from epoch %d (Test Acc=%.2f%%)",
                          best_epoch, best_test_acc);
-                log_info("[EARLY_STOP] Training will continue in eval mode (no weight updates)");
+                // Signal head to stop training via file flag
+                FILE* stop_f = fopen("/tmp/ipc_early_stop", "w");
+                if (stop_f) { fprintf(stop_f, "%d\n", current_epoch); fclose(stop_f); }
+                log_info("[EARLY_STOP] Signaled head device to stop training");
                 /* NOTE: Only FC weights are checkpointed by early stopping. Conv layer weights
                    reside on worker devices and would require cross-device signaling to save/restore. */
             }
