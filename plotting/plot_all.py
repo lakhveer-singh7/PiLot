@@ -93,23 +93,54 @@ def plot_inference_latency():
     rows = read_csv(csv_file)
 
     ds_labels = [r['dataset'].replace('_', ' ') for r in rows]
-    cent = [float(r['centralized_ms']) for r in rows]
-    dist = [float(r['distributed_ms']) for r in rows]
+    cent = np.array([float(r['centralized_ms']) for r in rows])
+    dist = np.array([float(r['distributed_ms']) for r in rows])
+
+    # Distributed bar split: computation = centralized latency, communication = remainder
+    dist_comp = cent.copy()         # same CNN FLOPs
+    dist_comm = dist - cent          # IPC / shared-memory overhead
 
     x = np.arange(len(ds_labels))
     width = 0.32
 
-    fig, ax = plt.subplots(figsize=(9, 5.5))
-    b1 = ax.bar(x - width/2, cent, width, color=BLUE, label='Centralized (Computation only)')
-    b2 = ax.bar(x + width/2, dist, width, color=RED,  label='Distributed (Computation + Communication)')
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    # Value labels on top of bars
-    for bar_group in [b1, b2]:
-        for bar in bar_group:
-            h = bar.get_height()
-            ax.text(bar.get_x() + bar.get_width()/2, h + 0.15,
-                    f'{h:.2f}', ha='center', va='bottom',
-                    fontsize=10, fontweight='bold')
+    # Centralized: solid blue bar
+    b_cent = ax.bar(x - width/2, cent, width, color=BLUE,
+                    edgecolor='black', linewidth=0.5,
+                    label='Centralized (Computation)')
+
+    # Distributed: stacked bar -- computation (orange) + communication (dark red)
+    ORANGE = '#FF9933'
+    DARK_RED = '#BF2606'
+    b_comp = ax.bar(x + width/2, dist_comp, width, color=ORANGE,
+                    edgecolor='black', linewidth=0.5,
+                    label='Distributed - Computation')
+    b_comm = ax.bar(x + width/2, dist_comm, width, bottom=dist_comp,
+                    color=DARK_RED, edgecolor='black', linewidth=0.5,
+                    label='Distributed - Communication (IPC)')
+
+    # Dashed white line at the cut between computation and communication
+    for i in range(len(x)):
+        bx = b_comp[i].get_x()
+        bw = b_comp[i].get_width()
+        ax.plot([bx, bx + bw], [dist_comp[i], dist_comp[i]],
+                'w--', linewidth=1.5, zorder=5)
+
+    # --- Value labels ---
+    for i in range(len(x)):
+        # Centralized total on top
+        ax.text(x[i] - width/2, cent[i] + 0.2, f'{cent[i]:.2f}',
+                ha='center', va='bottom', fontsize=9.5, fontweight='bold')
+        # Distributed computation (inside lower section)
+        ax.text(x[i] + width/2, dist_comp[i]/2, f'{dist_comp[i]:.2f}',
+                ha='center', va='center', fontsize=8.5, fontweight='bold', color='white')
+        # Distributed communication (inside upper section)
+        ax.text(x[i] + width/2, dist_comp[i] + dist_comm[i]/2, f'{dist_comm[i]:.2f}',
+                ha='center', va='center', fontsize=8.5, fontweight='bold', color='white')
+        # Distributed total on top
+        ax.text(x[i] + width/2, dist[i] + 0.2, f'{dist[i]:.2f}',
+                ha='center', va='bottom', fontsize=9.5, fontweight='bold')
 
     ax.set_xticks(x)
     ax.set_xticklabels(ds_labels, fontsize=12)
@@ -117,7 +148,7 @@ def plot_inference_latency():
     ax.set_ylabel('Inference Latency (ms/sample)', fontsize=13, fontweight='bold')
     ax.set_title('Inference Latency: Centralized vs Distributed',
                  fontsize=15, fontweight='bold')
-    ax.legend(loc='upper left', fontsize=11, framealpha=0.9)
+    ax.legend(loc='upper left', fontsize=10, framealpha=0.9)
     ax.grid(True, axis='y', alpha=0.3)
     ax.tick_params(labelsize=11)
 
