@@ -221,6 +221,12 @@ int run_tail_device(int device_id, int num_classes) {
             if (errno == EINTR) continue;
             break;
         }
+
+        // === Check for shutdown sentinel (poison pill from pipeline) ===
+        if (shm_tensor->sample_id == -1) {
+            log_info("Tail: Received shutdown sentinel, exiting cleanly");
+            break;
+        }
         
         int is_testing_now = shm_tensor->is_testing;
         

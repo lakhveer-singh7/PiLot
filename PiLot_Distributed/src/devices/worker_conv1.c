@@ -239,6 +239,21 @@ int run_worker_device(int device_id) {
             if (errno == EINTR) continue;
             break;
         }
+
+        // === Check for shutdown sentinel (poison pill from head) ===
+        if (prev_shm->sample_id == -1) {
+            log_info("Worker %d (L%d): Received shutdown sentinel, propagating...", device_id, layer_id);
+            next_shm->sample_id = -1;
+            __sync_synchronize();
+            int sv = ipc_counter_increment(&next_shm->counter);
+            if (sv == num_workers) {
+                for (int w = 0; w < next_layer_num_workers; w++)
+                    sem_post(next_fwd_sem);
+                __sync_lock_test_and_set(&next_shm->counter, 0);
+            }
+            break;
+        }
+
         // log_info("Worker %d (Layer %d): Detected sample %d ready", device_id, layer_id, round);
         memset(grad_weights, 0, conv_config->weights_size);
         memset(grad_bias, 0, conv_config->bias_size);

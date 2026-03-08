@@ -317,6 +317,16 @@ static void shuffle_dataset(dataset_t* ds) {
         
     }
     
+    // === Graceful shutdown: send poison pill to pipeline ===
+    log_info("Head: Sending shutdown sentinel to pipeline...");
+    shm_tensor->sample_id = -1;
+    shm_tensor->is_testing = 0;
+    __sync_synchronize();
+    for (int w = 0; w < num_layer0_workers; w++)
+        sem_post(fwd_sem);
+    sleep(3);  // Give pipeline time to propagate sentinel
+    log_info("Head: Pipeline shutdown complete");
+
     free(aug_buffer);
     ipc_sem_close(fwd_sem);
     ipc_sem_close(bwd_sem);
