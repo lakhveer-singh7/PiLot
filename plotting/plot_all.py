@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-plot_all.py — Generate all 5 plots (mirrors the MATLAB scripts exactly).
+plot_all.py — Generate all 6 plots (mirrors the MATLAB scripts exactly).
 
-  (a) 3 × Accuracy vs Time (one per dataset)
-  (b) 1 × Inference Latency grouped bar chart
-  (c) 1 × Memory Consumption grouped bar chart
+  (a)  3 × Accuracy vs Time (one per dataset)
+  (b1) 1 × Inference Latency grouped bar chart
+  (b2) 1 × Per-Device Inference Latency (stacked computation + communication)
+  (c)  1 × Memory Consumption grouped bar chart
 
 Prerequisites:
   1. Run experiments:  bash run_all_local.sh
@@ -46,7 +47,7 @@ def read_csv(path):
 # ═════════════════════════════════════════════════════════════════════════════
 
 def plot_accuracy_vs_time():
-    print('[1/3] Generating Accuracy vs Time plots …')
+    print('[1/4] Generating Accuracy vs Time plots …')
     for ds in DATASETS:
         cent_file = os.path.join(CSV_DIR, f'accuracy_vs_time_{ds}_centralized.csv')
         dist_file = os.path.join(CSV_DIR, f'accuracy_vs_time_{ds}_distributed.csv')
@@ -88,7 +89,7 @@ def plot_accuracy_vs_time():
 # ═════════════════════════════════════════════════════════════════════════════
 
 def plot_inference_latency():
-    print('[2/3] Generating Inference Latency plot …')
+    print('[2a/4] Generating Inference Latency plot …')
     csv_file = os.path.join(CSV_DIR, 'inference_latency.csv')
     rows = read_csv(csv_file)
 
@@ -160,11 +161,128 @@ def plot_inference_latency():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+#  (b2) Per-Device Inference Latency — stacked bars (Computation + Communication)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def plot_per_device_latency():
+    """Per-device stacked bar: computation (FLOPs-based) + communication (IPC).
+
+    Architecture: Head → L0_W0,L0_W1 → L1_W0,L1_W1,L1_W2 → Tail
+    Computation delay = FLOPs / 64 MHz (proc_delay_flops simulation).
+    Communication = (pipeline_latency − critical-path computation) / 3 hops,
+    attributed to the receiving device at each IPC boundary.
+    """
+    print('[2b/4] Generating Per-Device Inference Latency plot …')
+    csv_file = os.path.join(CSV_DIR, 'inference_latency.csv')
+    rows = read_csv(csv_file)
+
+    # ── Dataset properties (input_length, num_classes) ──
+    DS_PROPS = {
+        'Cricket_X': (300, 12),
+        'ECG5000':   (140,  5),
+        'FaceAll':   (131, 14),
+    }
+
+    # ── CNN constants ──
+    PROC_HZ = 64_000_000
+    L0_in, L0_out, L0_k, L0_s, L0_p = 1, 16, 5, 1, 2
+    L1_in, L1_out_ch, L1_k, L1_s, L1_p = 32, 16, 5, 2, 2
+    TAIL_IN = 96   # 48 ch × 2 (dual pool)
+
+    device_names = ['Head', 'L0_W0', 'L0_W1', 'L1_W0', 'L1_W1', 'L1_W2', 'Tail']
+    N_DEV = 7
+    ORANGE   = '#FF9933'
+    DARK_RED = '#BF2606'
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+    for idx, r in enumerate(rows):
+        ds = r['dataset']
+        pipe_dist = float(r['distributed_ms'])
+        il, nc = DS_PROPS[ds]
+
+        # Output lengths
+        L0_olen = il                                          # stride=1, same pad
+        L1_olen = (il + 2 * L1_p - L1_k) // L1_s + 1
+
+        # Forward FLOPs
+        L0_flops = 2 * L0_out * L0_in * L0_k * L0_olen
+        L1_flops = 2 * L1_out_ch * L1_in * L1_k * L1_olen
+        tail_flops = 2 * TAIL_IN * nc
+
+        # Computation delays (ms)
+        head_c  = 0.0
+        L0_c    = L0_flops / PROC_HZ * 1000
+        L1_c    = L1_flops / PROC_HZ * 1000
+        tail_c  = tail_flops / PROC_HZ * 1000
+
+        crit_comp  = head_c + L0_c + L1_c + tail_c
+        total_comm = max(0.0, pipe_dist - crit_comp)
+        comm_hop   = total_comm / 3.0
+
+        comp = np.array([head_c, L0_c, L0_c, L1_c, L1_c, L1_c, tail_c])
+        comm = np.array([0.0, comm_hop, comm_hop, comm_hop, comm_hop, comm_hop, comm_hop])
+
+        ax = axes[idx]
+        x = np.arange(N_DEV)
+        width = 0.55
+
+        b_comp = ax.bar(x, comp, width, color=ORANGE,
+                        edgecolor='black', linewidth=0.5,
+                        label='Computation')
+        b_comm = ax.bar(x, comm, width, bottom=comp, color=DARK_RED,
+                        edgecolor='black', linewidth=0.5,
+                        label='Communication (IPC)')
+
+        # White dashed line at cut
+        for i in range(N_DEV):
+            if comp[i] > 0 and comm[i] > 0:
+                bx_ = b_comp[i].get_x()
+                bw_ = b_comp[i].get_width()
+                ax.plot([bx_, bx_ + bw_], [comp[i], comp[i]],
+                        'w--', linewidth=1.5, zorder=5)
+
+        # Value labels
+        for i in range(N_DEV):
+            total = comp[i] + comm[i]
+            # total on top
+            ax.text(x[i], total + 0.08, f'{total:.2f}',
+                    ha='center', va='bottom', fontsize=8, fontweight='bold')
+            # comp inside bottom (if tall enough)
+            if comp[i] > 0.25:
+                ax.text(x[i], comp[i] / 2, f'{comp[i]:.2f}',
+                        ha='center', va='center', fontsize=7.5,
+                        fontweight='bold', color='white')
+            # comm inside top (if tall enough)
+            if comm[i] > 0.25:
+                ax.text(x[i], comp[i] + comm[i] / 2, f'{comm[i]:.2f}',
+                        ha='center', va='center', fontsize=7.5,
+                        fontweight='bold', color='white')
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(device_names, fontsize=9, rotation=30, ha='right')
+        ax.set_xlabel('Device', fontsize=11, fontweight='bold')
+        ax.set_ylabel('Inference Latency (ms)', fontsize=11, fontweight='bold')
+        ax.set_title(ds.replace('_', ' '), fontsize=13, fontweight='bold')
+        ax.legend(loc='upper left', fontsize=8.5, framealpha=0.9)
+        ax.grid(True, axis='y', alpha=0.3)
+        ax.tick_params(labelsize=9)
+
+    fig.suptitle('Per-Device Inference Latency (Distributed Model)',
+                 fontsize=15, fontweight='bold', y=1.01)
+    fig.tight_layout()
+    out = os.path.join(OUT_DIR, 'per_device_latency.png')
+    fig.savefig(out, dpi=200, bbox_inches='tight')
+    plt.close(fig)
+    print(f'  Saved: {out}')
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 #  (c)  Memory Consumption — grouped bar chart with error bars
 # ═════════════════════════════════════════════════════════════════════════════
 
 def plot_memory_consumption():
-    print('[3/3] Generating Memory Consumption plot …')
+    print('[3/4] Generating Memory Consumption plot …')
     csv_file = os.path.join(CSV_DIR, 'memory_consumption.csv')
     rows = read_csv(csv_file)
 
@@ -221,11 +339,14 @@ if __name__ == '__main__':
     print()
     plot_inference_latency()
     print()
+    plot_per_device_latency()
+    print()
     plot_memory_consumption()
-    print(f'\n=== All 5 plots generated! ===')
+    print(f'\n=== All 6 plots generated! ===')
     print(f'Output: {OUT_DIR}/')
     print('  - accuracy_vs_time_Cricket_X.png')
     print('  - accuracy_vs_time_ECG5000.png')
     print('  - accuracy_vs_time_FaceAll.png')
     print('  - inference_latency.png')
+    print('  - per_device_latency.png')
     print('  - memory_consumption.png')
