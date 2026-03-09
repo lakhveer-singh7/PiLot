@@ -29,10 +29,10 @@ if ~exist(csv_file, 'file')
     error('CSV not found: %s\nRun parse_multi_device_results.py first.', csv_file);
 end
 
-%% Read CSV
+%% Read CSV  (9 columns — skip the last total_avg_kb with %*f)
 fid = fopen(csv_file, 'r');
 hdr = fgetl(fid);
-raw = textscan(fid, '%s%d%f%f%f%f%f%f', 'Delimiter', ',');
+raw = textscan(fid, '%s%d%f%f%f%f%f%f%*f', 'Delimiter', ',');
 fclose(fid);
 r_ds   = raw{1};
 r_ndev = double(raw{2});
@@ -112,6 +112,8 @@ for d = 1:length(datasets)
     hold off;
 
     set(gca, 'XTick', x_ticks, 'XTickLabel', x_labels_plot, 'FontSize', 12);
+    xlim([0, max(x_ticks)+2]);
+    ylim([0, inf]);
     xlabel('Configuration', 'FontSize', 13, 'FontWeight', 'bold');
     ylabel('Avg Memory per Device (KB)', 'FontSize', 13, 'FontWeight', 'bold');
     title(sprintf('Memory Consumption — %s  (Distributed)', ...
