@@ -1,0 +1,65 @@
+{
+  "model": {
+    "name": "nRF52840_UniformCNN_ECG5000",
+    "version": "2.0"
+  },
+  "global": {
+    "dataset": "ECG5000",
+    "epochs": 100,
+    "num_classes": 5,
+    "input_length": 140,
+    "memory_limit_bytes": 0,
+    "flash_memory_bytes": 0,
+    "learning_rate": 0.005,
+    "dropout_rate": 0.25,
+    "weight_decay": 0.0003,
+    "grad_accum_steps": 5,
+    "patience": 30,
+    "grad_clip_max": 5.0,
+    "warmup_epochs": 3,
+    "eta_min": 1e-05,
+    "max_train_samples": 500,
+    "max_test_samples": 4500
+  },
+  "layers": [
+    {
+      "id": 0,
+      "type": "conv1d",
+      "in_channels": 1,
+      "out_channels": 32,
+      "kernel_size": 5,
+      "stride": 1,
+      "padding": 2,
+      "input_length": 140,
+      "output_length": 140,
+      "memory_bytes": 40496,
+      "ops": 76160
+    },
+    {
+      "id": 1,
+      "type": "conv1d",
+      "in_channels": 32,
+      "out_channels": 48,
+      "kernel_size": 5,
+      "stride": 2,
+      "padding": 2,
+      "input_length": 140,
+      "output_length": 70,
+      "memory_bytes": 169984,
+      "ops": 1098720
+    },
+    {
+      "id": 2,
+      "type": "fc",
+      "input_length": 70,
+      "pooling": [
+        "avg",
+        "max"
+      ],
+      "in_features": 96,
+      "out_features": 5,
+      "memory_bytes": 21604,
+      "ops": 7796
+    }
+  ]
+}

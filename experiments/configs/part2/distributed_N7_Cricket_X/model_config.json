@@ -1,0 +1,70 @@
+{
+  "model": {
+    "name": "nRF52840_UniformCNN_Cricket_X",
+    "version": "2.0"
+  },
+  "global": {
+    "dataset": "Cricket_X",
+    "epochs": 100,
+    "num_classes": 12,
+    "input_length": 300,
+    "memory_limit_bytes": 262144,
+    "flash_memory_bytes": 1048576,
+    "learning_rate": 0.005,
+    "dropout_rate": 0.25,
+    "weight_decay": 0.0003,
+    "grad_accum_steps": 5,
+    "patience": 30,
+    "grad_clip_max": 5.0,
+    "warmup_epochs": 3,
+    "eta_min": 1e-05,
+    "max_train_samples": 348,
+    "max_test_samples": 522
+  },
+  "layers": [
+    {
+      "id": 0,
+      "type": "conv1d",
+      "in_channels": 1,
+      "out_channels": 32,
+      "kernel_size": 5,
+      "stride": 1,
+      "padding": 2,
+      "input_length": 300,
+      "output_length": 300,
+      "channels_per_device": 16,
+      "num_devices": 2,
+      "memory_per_device_bytes": 41648,
+      "ops_per_device": 81600
+    },
+    {
+      "id": 1,
+      "type": "conv1d",
+      "in_channels": 32,
+      "out_channels": 48,
+      "kernel_size": 5,
+      "stride": 2,
+      "padding": 2,
+      "input_length": 300,
+      "output_length": 150,
+      "channels_per_device": 16,
+      "num_devices": 3,
+      "memory_per_device_bytes": 99328,
+      "ops_per_device": 784800
+    },
+    {
+      "id": 2,
+      "type": "fc",
+      "input_length": 150,
+      "pooling": [
+        "avg",
+        "max"
+      ],
+      "in_features": 96,
+      "out_features": 12,
+      "num_devices": 1,
+      "memory_per_device_bytes": 47856,
+      "ops_per_device": 16848
+    }
+  ]
+}

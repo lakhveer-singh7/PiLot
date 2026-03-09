@@ -1,0 +1,65 @@
+{
+  "model": {
+    "name": "nRF52840_UniformCNN_ElectricDevices",
+    "version": "2.0"
+  },
+  "global": {
+    "dataset": "ElectricDevices",
+    "epochs": 100,
+    "num_classes": 7,
+    "input_length": 96,
+    "memory_limit_bytes": 0,
+    "flash_memory_bytes": 0,
+    "learning_rate": 0.005,
+    "dropout_rate": 0.25,
+    "weight_decay": 0.0003,
+    "grad_accum_steps": 5,
+    "patience": 30,
+    "grad_clip_max": 5.0,
+    "warmup_epochs": 3,
+    "eta_min": 1e-05,
+    "max_train_samples": 500,
+    "max_test_samples": 2202
+  },
+  "layers": [
+    {
+      "id": 0,
+      "type": "conv1d",
+      "in_channels": 1,
+      "out_channels": 32,
+      "kernel_size": 5,
+      "stride": 1,
+      "padding": 2,
+      "input_length": 96,
+      "output_length": 96,
+      "memory_bytes": 29056,
+      "ops": 52224
+    },
+    {
+      "id": 1,
+      "type": "conv1d",
+      "in_channels": 32,
+      "out_channels": 48,
+      "kernel_size": 5,
+      "stride": 2,
+      "padding": 2,
+      "input_length": 96,
+      "output_length": 48,
+      "memory_bytes": 155904,
+      "ops": 753408
+    },
+    {
+      "id": 2,
+      "type": "fc",
+      "input_length": 48,
+      "pooling": [
+        "avg",
+        "max"
+      ],
+      "in_features": 96,
+      "out_features": 7,
+      "memory_bytes": 20492,
+      "ops": 6076
+    }
+  ]
+}
